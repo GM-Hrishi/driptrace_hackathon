@@ -1,5 +1,7 @@
-import { NavLink, Route, Routes } from 'react-router'
+import { Link, NavLink, Route, Routes } from 'react-router'
 
+import { Beacon } from './components/ui.jsx'
+import { TelemetryProvider, useTelemetry } from './lib/telemetry.jsx'
 import { useRouteTheme } from './lib/useRouteTheme.js'
 import DesignTokens from './pages/DesignTokens.jsx'
 import NotFound from './pages/NotFound.jsx'
@@ -9,6 +11,53 @@ const NAV = [
   { to: '/', label: 'Ward' },
   { to: '/tokens', label: 'Design tokens' },
 ]
+
+/**
+ * The single highest active alert across the ward, pinned under the nav on
+ * every screen. Disappears entirely when nothing is wrong: there is no green
+ * "all clear" bar to habituate staff into ignoring the strip.
+ */
+function SeverityBanner() {
+  const { topAlert, beds, status } = useTelemetry()
+  if (status !== 'ready' || !topAlert) return null
+
+  const others = beds.filter((bed) => bed.channel !== 'normal').length - 1
+  const acknowledged = beds.find((bed) => bed.id === topAlert.bedId)?.acknowledged ?? false
+
+  return (
+    <div
+      data-severity={topAlert.severity}
+      className="border-t"
+      style={{ backgroundColor: 'var(--dt-sev-tint)', borderColor: 'var(--dt-chrome-border)' }}
+    >
+      <div
+        aria-live="polite"
+        className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-2 text-[13px] sm:px-6"
+      >
+        <Beacon channel={topAlert.severity} acknowledged={acknowledged} />
+        <p className="min-w-0 flex-1 truncate">
+          <span className="font-semibold" style={{ color: 'var(--dt-sev)' }}>
+            {topAlert.bedLabel}
+          </span>
+          <span className="text-ink"> · {topAlert.message}</span>
+          {acknowledged && <span className="text-ink-muted"> · acknowledged</span>}
+        </p>
+        {others > 0 && (
+          <span className="dt-nums hidden shrink-0 text-[12px] text-ink-muted sm:inline">
+            +{others} more {others === 1 ? 'bed' : 'beds'}
+          </span>
+        )}
+        <Link
+          to={`/bed/${topAlert.bedId}`}
+          className="shrink-0 font-semibold underline-offset-4 hover:underline"
+          style={{ color: 'var(--dt-sev)' }}
+        >
+          View bed
+        </Link>
+      </div>
+    </div>
+  )
+}
 
 function TopBar() {
   return (
@@ -44,6 +93,7 @@ function TopBar() {
           ))}
         </nav>
       </div>
+      <SeverityBanner />
     </header>
   )
 }
@@ -52,18 +102,20 @@ export default function App() {
   useRouteTheme()
 
   return (
-    <div className="min-h-dvh bg-bg text-ink">
-      <TopBar />
-      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
-        <Routes>
-          <Route path="/" element={<WardView />} />
-          <Route path="/tokens" element={<DesignTokens />} />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </main>
-      <footer className="mx-auto max-w-7xl px-4 pb-8 text-[12px] text-ink-subtle sm:px-6">
-        DripTrace · KERNEL PRIME&apos;26 · {new Date().getFullYear()}
-      </footer>
-    </div>
+    <TelemetryProvider>
+      <div className="min-h-dvh bg-bg text-ink">
+        <TopBar />
+        <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
+          <Routes>
+            <Route path="/" element={<WardView />} />
+            <Route path="/tokens" element={<DesignTokens />} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </main>
+        <footer className="mx-auto max-w-7xl px-4 pb-8 text-[12px] text-ink-subtle sm:px-6">
+          DripTrace · KERNEL PRIME&apos;26 · {new Date().getFullYear()}
+        </footer>
+      </div>
+    </TelemetryProvider>
   )
 }
