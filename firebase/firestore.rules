@@ -1,0 +1,36 @@
+rules_version = '2';
+
+// DripTrace Firestore rules.
+//
+// Firestore holds bed metadata and prescribed flow ranges - configuration, not
+// live telemetry. Live readings go to the Realtime Database.
+//
+// Every client write is denied. Configuration is changed through the Firebase
+// console or an admin-credentialed process, both of which bypass these rules.
+// There is no client code path that can write here, so there is no client code
+// path an attacker can borrow.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Bed configuration: readable by any authenticated dashboard, writable by
+    // nobody holding only a client credential.
+    match /beds/{bedId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // Acknowledged-alarm log. Append-only from an admin process; the dashboard
+    // reads it to show which alerts staff have already seen.
+    match /alarmLog/{entryId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // Default deny. Any collection added later is locked until its own rule is
+    // written deliberately, rather than inheriting read access by accident.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

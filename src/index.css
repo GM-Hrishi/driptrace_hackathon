@@ -1,0 +1,331 @@
+@import 'tailwindcss';
+
+/* ===========================================================================
+   DripTrace design system - "Graphite Clinical / Quiet Ward"
+   ---------------------------------------------------------------------------
+   Rules this file encodes, so they cannot drift:
+     1. Neutral graphite/slate carries the whole interface.
+     2. ONE accent (slate blue in light, cyan in dark). The accent never
+        appears in alarm UI - not on a rail, not on a beacon, not on a banner.
+     3. Status colors exist only for real alert states. There is no "normal"
+        green dot; normal reads as plain neutral text.
+     4. Glass blur belongs to floating chrome only. Content cards stay opaque.
+   Theme is driven by data-theme on <html>: dark for the live ward view,
+   light for admin and setup screens.
+   ======================================================================== */
+
+/* Dark mode is an explicit app decision per route, not an OS preference, so the
+   `dark:` variant follows data-theme instead of prefers-color-scheme. */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+:root {
+  color-scheme: light;
+
+  /* --- Graphite base (light) --- */
+  --dt-bg: #f7f8f9;
+  --dt-surface: #ffffff;
+  --dt-surface-2: #f1f3f5;
+  --dt-surface-3: #e9ecef;
+  --dt-border: #dee2e6;
+  --dt-border-strong: #ced4da;
+
+  --dt-text: #1a1d21;
+  --dt-text-muted: #5c636a;
+  --dt-text-subtle: #868e96;
+
+  /* --- The single accent. Interactive chrome only. --- */
+  --dt-accent: #3b5bda;
+  --dt-accent-hover: #2f4bc4;
+  --dt-accent-soft: #e8ecfb;
+  --dt-accent-on: #ffffff;
+
+  /* --- Alert states. Reserved. Never decorative. --- */
+  --dt-critical: #d32f2f;
+  --dt-critical-tint: #fdeaea;
+  --dt-caution: #ad5400;
+  --dt-caution-tint: #fdf1e3;
+  /* Success is for action confirmation only, never a "normal" badge. */
+  --dt-success: #047857;
+  --dt-success-tint: #e6f4ef;
+
+  /* --- Sensor offline: a separate channel from any clinical alarm. --- */
+  --dt-offline: #5c636a;
+  --dt-offline-tint: #eceef0;
+
+  /* --- Geometry --- */
+  --dt-radius-card: 24px;
+  --dt-radius-control: 12px;
+  --dt-radius-pill: 999px;
+
+  /* --- Soft ambient shadows, no hard drop shadows --- */
+  --dt-shadow-card: 0 1px 2px rgb(16 19 22 / 0.04), 0 4px 14px rgb(16 19 22 / 0.05);
+  --dt-shadow-card-hover: 0 1px 2px rgb(16 19 22 / 0.05), 0 8px 24px rgb(16 19 22 / 0.08);
+  --dt-shadow-chrome: 0 2px 8px rgb(16 19 22 / 0.06), 0 14px 36px rgb(16 19 22 / 0.09);
+
+  /* --- Chrome glass (the only blur in the app) --- */
+  --dt-chrome-bg: rgb(255 255 255 / 0.74);
+  --dt-chrome-border: rgb(16 19 22 / 0.08);
+}
+
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  --dt-bg: #121417;
+  --dt-surface: #1a1d21;
+  --dt-surface-2: #22262b;
+  --dt-surface-3: #2a2f35;
+  --dt-border: #2e3338;
+  --dt-border-strong: #3e454c;
+
+  --dt-text: #e9ecef;
+  --dt-text-muted: #a6aeb6;
+  --dt-text-subtle: #7a838c;
+
+  --dt-accent: #06b6d4;
+  --dt-accent-hover: #0e7490;
+  --dt-accent-soft: #0d2a31;
+  --dt-accent-on: #06181c;
+
+  /* Lifted so they hold up against graphite at ward-light brightness. */
+  --dt-critical: #ff3838;
+  --dt-critical-tint: #2e1414;
+  --dt-caution: #ffb302;
+  --dt-caution-tint: #2d2208;
+  --dt-success: #34d399;
+  --dt-success-tint: #0f2a22;
+
+  /* Muted steel-cyan: reads as "the sensor, not the patient", and stays
+     visibly distinct from --dt-accent so offline never looks interactive. */
+  --dt-offline: #6d9aa6;
+  --dt-offline-tint: #1b2529;
+
+  --dt-shadow-card: 0 1px 2px rgb(0 0 0 / 0.3), 0 4px 14px rgb(0 0 0 / 0.34);
+  --dt-shadow-card-hover: 0 1px 2px rgb(0 0 0 / 0.34), 0 8px 24px rgb(0 0 0 / 0.42);
+  --dt-shadow-chrome: 0 2px 8px rgb(0 0 0 / 0.36), 0 14px 36px rgb(0 0 0 / 0.46);
+
+  --dt-chrome-bg: rgb(26 29 33 / 0.72);
+  --dt-chrome-border: rgb(255 255 255 / 0.07);
+}
+
+/* Expose the tokens as Tailwind utilities. `inline` keeps the var() reference
+   live, so bg-surface / text-critical re-resolve when data-theme flips. */
+@theme inline {
+  --color-bg: var(--dt-bg);
+  --color-surface: var(--dt-surface);
+  --color-surface-2: var(--dt-surface-2);
+  --color-surface-3: var(--dt-surface-3);
+  --color-line: var(--dt-border);
+  --color-line-strong: var(--dt-border-strong);
+
+  --color-ink: var(--dt-text);
+  --color-ink-muted: var(--dt-text-muted);
+  --color-ink-subtle: var(--dt-text-subtle);
+
+  --color-accent: var(--dt-accent);
+  --color-accent-hover: var(--dt-accent-hover);
+  --color-accent-soft: var(--dt-accent-soft);
+  --color-accent-on: var(--dt-accent-on);
+
+  --color-critical: var(--dt-critical);
+  --color-critical-tint: var(--dt-critical-tint);
+  --color-caution: var(--dt-caution);
+  --color-caution-tint: var(--dt-caution-tint);
+  --color-success: var(--dt-success);
+  --color-success-tint: var(--dt-success-tint);
+  --color-offline: var(--dt-offline);
+  --color-offline-tint: var(--dt-offline-tint);
+
+  --color-sev: var(--dt-sev);
+  --color-sev-tint: var(--dt-sev-tint);
+
+  --radius-card: var(--dt-radius-card);
+  --radius-control: var(--dt-radius-control);
+  --radius-pill: var(--dt-radius-pill);
+
+  --shadow-card: var(--dt-shadow-card);
+  --shadow-card-hover: var(--dt-shadow-card-hover);
+  --shadow-chrome: var(--dt-shadow-chrome);
+
+  --font-sans: 'IBM Plex Sans Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', monospace;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    margin: 0;
+    background-color: var(--dt-bg);
+    color: var(--dt-text);
+    font-family: var(--font-sans);
+    font-synthesis-weight: none;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Nothing in this app should scroll sideways. */
+  html,
+  body {
+    overflow-x: clip;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--dt-accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  :where(h1, h2, h3) {
+    font-weight: 600;
+    letter-spacing: -0.015em;
+  }
+}
+
+/* ===========================================================================
+   Severity
+   ---------------------------------------------------------------------------
+   One attribute, data-severity, resolves every alert surface: the status rail
+   on a card edge, the beacon, and the topbar banner. `normal` deliberately
+   resolves to neutral border grey, which is how "nothing is wrong" is shown.
+   ======================================================================== */
+[data-severity='normal'] {
+  --dt-sev: var(--dt-border-strong);
+  --dt-sev-tint: var(--dt-surface-2);
+}
+[data-severity='caution'] {
+  --dt-sev: var(--dt-caution);
+  --dt-sev-tint: var(--dt-caution-tint);
+}
+[data-severity='critical'] {
+  --dt-sev: var(--dt-critical);
+  --dt-sev-tint: var(--dt-critical-tint);
+}
+/* Offline is a sensor fault, not a patient alarm. Its own channel, and it
+   deliberately never outranks a clinical state. */
+[data-severity='offline'] {
+  --dt-sev: var(--dt-offline);
+  --dt-sev-tint: var(--dt-offline-tint);
+}
+
+/* ===========================================================================
+   Alarm motion - IEC 60601-1-8 priority mapping
+   ---------------------------------------------------------------------------
+   High priority   : ~2 Hz, 50% duty, hard on/off (bottle empty, flow stopped)
+   Medium priority : ~0.6 Hz smooth pulse        (volume < 10%, flow out of range)
+   Offline         : no motion at all            (constant neutral/cyan)
+   Only the beacon and the status rail animate. Numbers, text and cards never
+   flash - a flashing ward is an unreadable ward.
+   ======================================================================== */
+@keyframes dt-alarm-high {
+  0%,
+  49.99% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0.16;
+  }
+}
+
+@keyframes dt-alarm-medium {
+  0%,
+  100% {
+    opacity: 0.42;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* 500ms period = 2 Hz. steps(1, end) guarantees a square on/off, not a fade. */
+.dt-alarm-high {
+  animation: dt-alarm-high 500ms steps(1, end) infinite;
+}
+
+/* 1667ms period is ~0.6 Hz, eased so it reads as a breath rather than a blink. */
+.dt-alarm-medium {
+  animation: dt-alarm-medium 1667ms ease-in-out infinite;
+}
+
+.dt-alarm-none {
+  animation: none;
+}
+
+/* Reduced motion: the priority still has to be unmistakable, so flashing is
+   traded for a heavy static outline. The matching glyph (! / !! / !!!) is
+   rendered by the component, which reads the same preference. */
+@media (prefers-reduced-motion: reduce) {
+  .dt-alarm-high,
+  .dt-alarm-medium {
+    animation: none;
+    opacity: 1;
+    outline: 3px solid var(--dt-sev, currentColor);
+    outline-offset: 2px;
+  }
+  .dt-alarm-high {
+    outline-width: 4px;
+  }
+}
+
+/* ===========================================================================
+   Primitives
+   ======================================================================== */
+@utility dt-nums {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+  font-family: var(--font-mono);
+  letter-spacing: -0.01em;
+}
+
+/* The one and only glass surface: floating sidebar and topbar. */
+@utility dt-chrome {
+  background-color: var(--dt-chrome-bg);
+  color: var(--dt-text);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  border-color: var(--dt-chrome-border);
+  box-shadow: var(--dt-shadow-chrome);
+}
+
+/* Opaque by design. Content cards do not get blur.
+   `color` is re-declared rather than inherited on purpose: `color: var(--x)`
+   computes once on the element that declares it, and descendants inherit the
+   resolved color, not the var. Without this, a card inside a nested
+   data-theme container would keep the OUTER theme's ink and vanish. */
+@utility dt-card {
+  background-color: var(--dt-surface);
+  color: var(--dt-text);
+  border-radius: var(--dt-radius-card);
+  border: 1px solid var(--dt-border);
+  box-shadow: var(--dt-shadow-card);
+}
+
+@utility dt-skeleton {
+  background-image: linear-gradient(
+    90deg,
+    var(--dt-surface-2) 0%,
+    var(--dt-surface-3) 50%,
+    var(--dt-surface-2) 100%
+  );
+  background-size: 200% 100%;
+  animation: dt-shimmer 1400ms ease-in-out infinite;
+}
+
+@keyframes dt-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dt-skeleton {
+    animation: none;
+    background-image: none;
+    background-color: var(--dt-surface-2);
+  }
+}

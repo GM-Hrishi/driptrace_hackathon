@@ -1,0 +1,50 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "beds": {
+      ".read": "auth != null",
+
+      "$bedId": {
+        ".write": "auth != null && auth.token.device === true && auth.uid === $bedId",
+        ".validate": "newData.hasChildren(['weightGrams', 'flowRateMlPerHr', 'bottlePercentRemaining', 'bottleEmpty', 'lastUpdated'])",
+
+        "id": { ".validate": "newData.isString() && newData.val().length <= 48" },
+        "label": { ".validate": "newData.isString() && newData.val().length <= 80" },
+        "ward": { ".validate": "newData.isString() && newData.val().length <= 80" },
+        "weightGrams": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 5000" },
+        "flowRateMlPerHr": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000" },
+        "dropsPerMin": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 400" },
+        "bottlePercentRemaining": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100" },
+        "bottleEmpty": { ".validate": "newData.isBoolean()" },
+        "heartRate": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 250" },
+        "spo2": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100" },
+        "sensorOnline": { ".validate": "newData.isBoolean()" },
+        "lastUpdated": { ".validate": "newData.isNumber() && newData.val() <= now + 60000" },
+        "severity": { ".validate": "newData.isString() && newData.val().matches(/^(normal|caution|critical)$/)" },
+
+        "$other": { ".validate": false }
+      }
+    },
+
+    "history": {
+      ".read": "auth != null",
+
+      "$bedId": {
+        ".write": "auth != null && auth.token.device === true && auth.uid === $bedId",
+        ".indexOn": "t",
+
+        "$sampleId": {
+          ".validate": "newData.hasChildren(['t', 'flowRateMlPerHr']) && !data.exists()",
+
+          "t": { ".validate": "newData.isNumber() && newData.val() <= now + 60000" },
+          "flowRateMlPerHr": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000" },
+          "bottlePercentRemaining": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100" },
+
+          "$other": { ".validate": false }
+        }
+      }
+    }
+  }
+}

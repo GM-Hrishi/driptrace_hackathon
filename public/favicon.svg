@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="DripTrace">
+  <rect width="32" height="32" rx="8" fill="#16191D"/>
+  <path d="M16 5c0 0 8.5 10.6 8.5 15.6a8.5 8.5 0 1 1-17 0C7.5 15.6 16 5 16 5Z" fill="#06B6D4"/>
+  <path d="M13.2 19.4a4.4 4.4 0 0 0 3.2 4.1" stroke="#16191D" stroke-width="1.6" stroke-linecap="round" fill="none" opacity=".55"/>
+</svg>
