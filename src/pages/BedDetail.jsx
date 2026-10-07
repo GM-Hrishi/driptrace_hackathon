@@ -208,14 +208,14 @@ function BedDetailBody({ bed, now, settings }) {
         <dl className="grid w-full grid-cols-2 gap-x-6 gap-y-3 text-[13px] sm:grid-cols-3 lg:grid-cols-5">
           {[
             ['Bed / room', bed.bedNumber],
-            ['Device', bed.simulated ? 'Simulated' : bed.device],
-            ['IV started', bed.ivStartAt ? `${formatClock(bed.ivStartAt)} · ${formatDuration(now - bed.ivStartAt)} ago` : 'Not recorded'],
-            ['Prescribed', `${bed.prescribedFlowMlPerHr} mL/hr · ${bed.volumeMl} mL bottle`],
+            ['Device', bed.simulated ? 'Simulated' : bed.device, !bed.simulated],
+            ['IV started', bed.ivStartAt ? `${formatClock(bed.ivStartAt)} · ${formatDuration(now - bed.ivStartAt)} ago` : 'Not recorded', Boolean(bed.ivStartAt)],
+            ['Prescribed', `${bed.prescribedFlowMlPerHr} mL/hr · ${bed.volumeMl} mL bottle`, true],
             ['Clinician', bed.clinician || '—'],
-          ].map(([term, detail]) => (
+          ].map(([term, detail, numeric]) => (
             <div key={term} className="min-w-0">
               <dt className="text-[11px] font-medium tracking-wide text-ink-subtle uppercase">{term}</dt>
-              <dd className="mt-0.5 truncate">{detail}</dd>
+              <dd className={`mt-0.5 truncate ${numeric ? 'dt-nums' : ''}`}>{detail}</dd>
             </div>
           ))}
         </dl>

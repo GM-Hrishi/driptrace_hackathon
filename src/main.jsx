@@ -3,10 +3,11 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router'
 import { MotionConfig } from 'motion/react'
 
-// UI sans: Plus Jakarta Sans, refined and geometric without being decorative.
-// Readouts: Geist Mono, fixed-width so live numbers never jitter sideways.
-// Both are variable fonts; unicode-range keeps the browser on the Latin files.
-import '@fontsource-variable/plus-jakarta-sans/wght.css'
+// UI sans: Geist. Readouts: Geist Mono, fixed-width so live numbers never
+// jitter sideways. Both are variable fonts covering weights 100-900, so every
+// weight the app uses (400/500/600) is real, never synthesized; unicode-range
+// keeps the browser on the Latin files.
+import '@fontsource-variable/geist/wght.css'
 import '@fontsource-variable/geist-mono/wght.css'
 import './index.css'
 

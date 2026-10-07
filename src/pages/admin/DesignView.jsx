@@ -254,7 +254,7 @@ function TypeSpecimen() {
       <div className="mt-5 grid gap-5 lg:grid-cols-2">
         <div className="dt-card p-6">
           <p className="dt-nums text-[11px] tracking-wide text-ink-subtle uppercase">
-            UI sans · Plus Jakarta Sans Variable
+            UI sans · Geist Variable
           </p>
           <p className="mt-3 text-3xl font-semibold tracking-tight">Ward overview</p>
           <p className="mt-2 text-[15px] leading-relaxed text-ink-muted">
