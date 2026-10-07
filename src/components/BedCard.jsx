@@ -14,9 +14,11 @@ import { Beacon, Tag, channelLabel, formatAgo } from './ui.jsx'
  * the steel-cyan offline channel, never flashes, and dims its numbers so stale
  * values cannot be read as live ones.
  *
- * @param {{ bed: import('../lib/telemetry.jsx').WardBed, now: number }} props
+ * @param {{ bed: import('../lib/telemetry.jsx').WardBed, now: number, linked?: boolean }} props
+ *   linked=false renders a plain card, for the Design View showcase.
  */
-export default function BedCard({ bed, now }) {
+export default function BedCard({ bed, now, linked = true }) {
+  const Root = linked ? Link : 'div'
   const { channel, acknowledged, reading } = bed
   const offline = channel === 'offline'
   const top = bed.alerts[0]
@@ -39,8 +41,8 @@ export default function BedCard({ bed, now }) {
   }
 
   return (
-    <Link
-      to={`/bed/${bed.id}`}
+    <Root
+      {...(linked ? { to: `/bed/${bed.id}` } : {})}
       data-severity={channel}
       className="dt-card hover:shadow-card-hover relative flex h-full flex-col overflow-hidden p-5 pl-6 transition-shadow"
     >
@@ -118,7 +120,7 @@ export default function BedCard({ bed, now }) {
           {reading ? formatAgo(reading.lastUpdated, now) : ''}
         </p>
       </div>
-    </Link>
+    </Root>
   )
 }
 

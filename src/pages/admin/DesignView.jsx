@@ -1,18 +1,19 @@
 import { useEffect, useState } from 'react'
 
-import IVBottle from '../components/IVBottle.jsx'
-import { alarmClass, resolveChannel } from '../lib/severity.js'
-import { PRIORITY_GLYPH } from '../lib/constants.js'
-import { startMockBeds } from '../lib/mockBeds.js'
+import BedCard from '../../components/BedCard.jsx'
+import IVBottle from '../../components/IVBottle.jsx'
+import { alarmClass, deriveAlerts, resolveChannel } from '../../lib/severity.js'
+import { PRIORITY_GLYPH } from '../../lib/constants.js'
+import { DEMO_WARD, startMockBeds } from '../../lib/mockBeds.js'
 
 /**
- * Design system reference for "Graphite Clinical / Quiet Ward".
+ * Design View: the living reference for "Graphite Clinical / Quiet Ward",
+ * nested under Admin.
  *
  * Its job is to make drift visible: every token is shown in both themes side
- * by side, and the alarm rails animate at their real rates, so a wrong value
- * or a wrong flash rate is obvious here before it reaches the ward view.
- *
- * Remove this route before the judging demo.
+ * by side, the alarm rails animate at their real rates, and the bottle and the
+ * ward card run off the simulator, so a wrong value or a wrong flash rate is
+ * obvious here before it reaches the ward view.
  */
 
 const BASE = ['bg', 'surface', 'surface-2', 'surface-3', 'border', 'border-strong']
@@ -142,6 +143,7 @@ function BottleShowcase() {
 
   if (beds.length === 0) return null
 
+  const now = Date.now()
   const hero = beds[0]
   const heroChannel = resolveChannel(hero)
 
@@ -204,14 +206,82 @@ function BottleShowcase() {
           })}
         </div>
       </div>
+
+      <h2 className="mt-10 text-lg">Ward card states</h2>
+      <p className="mt-2 max-w-prose text-[15px] leading-relaxed text-ink-muted">
+        The real BedCard, in the dark ward theme, fed by the same simulator. Critical and caution
+        flash at their IEC rates; offline is a static ring with dimmed numbers.
+      </p>
+      <div data-theme="dark" className="rounded-card mt-5 p-4" style={{ backgroundColor: 'var(--dt-bg)' }}>
+        <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {beds.map((reading, i) => (
+            <li key={reading.id}>
+              <BedCard bed={toWardBed(reading, DEMO_WARD[i], now)} now={now} linked={false} />
+            </li>
+          ))}
+        </ul>
+      </div>
     </section>
   )
 }
 
-export default function DesignTokens() {
+/** Shape a bare simulator reading like a live ward bed, for BedCard. */
+function toWardBed(reading, config, now) {
+  const alerts = deriveAlerts(reading, { prescribedFlowMlPerHr: config.prescribedFlowMlPerHr })
+  const bed = {
+    ...reading,
+    ...config,
+    id: reading.id,
+    label: reading.label,
+    device: 'simulated',
+    reading,
+    simulated: true,
+    paused: false,
+    alerts,
+    severity: alerts[0]?.severity ?? 'normal',
+    acknowledged: false,
+    acknowledgedAt: null,
+    history: [],
+  }
+  bed.channel = resolveChannel(bed, now)
+  return bed
+}
+
+function TypeSpecimen() {
+  return (
+    <section className="mt-10">
+      <h2 className="text-lg">Type</h2>
+      <div className="mt-5 grid gap-5 lg:grid-cols-2">
+        <div className="dt-card p-6">
+          <p className="dt-nums text-[11px] tracking-wide text-ink-subtle uppercase">
+            UI sans · Plus Jakarta Sans Variable
+          </p>
+          <p className="mt-3 text-3xl font-semibold tracking-tight">Ward overview</p>
+          <p className="mt-2 text-[15px] leading-relaxed text-ink-muted">
+            Headings, body, navigation and labels. Geometric and refined, quiet enough for a clinical
+            screen read at a glance.
+          </p>
+        </div>
+        <div className="dt-card p-6">
+          <p className="dt-nums text-[11px] tracking-wide text-ink-subtle uppercase">
+            Readouts · Geist Mono Variable
+          </p>
+          <p className="dt-nums mt-3 text-3xl font-semibold">
+            208.4 <span className="text-base font-normal text-ink-muted">mL/hr</span>
+          </p>
+          <p className="mt-2 text-[15px] leading-relaxed text-ink-muted">
+            Fixed-width digits for live values, so a number can tick without the line shifting.
+          </p>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+export default function DesignView() {
   return (
     <section>
-      <h1 className="text-2xl">Design tokens</h1>
+      <h2 className="text-xl">Design tokens</h2>
       <p className="mt-2 max-w-prose text-[15px] leading-relaxed text-ink-muted">
         Graphite Clinical / Quiet Ward. Status colors appear only on real alert states, the accent
         never touches alarm UI, and normal reads as neutral rather than green.
@@ -220,6 +290,7 @@ export default function DesignTokens() {
         <ThemePanel theme="light" />
         <ThemePanel theme="dark" />
       </div>
+      <TypeSpecimen />
       <BottleShowcase />
     </section>
   )

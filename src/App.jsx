@@ -1,16 +1,16 @@
-import { Link, NavLink, Route, Routes, useLocation } from 'react-router'
+import { Link, NavLink, Navigate, Route, Routes, useLocation } from 'react-router'
 
 import { Beacon } from './components/ui.jsx'
 import { TelemetryProvider, useTelemetry } from './lib/telemetry.jsx'
 import { useRouteTheme } from './lib/useRouteTheme.js'
+import Admin from './pages/Admin.jsx'
 import BedDetail from './pages/BedDetail.jsx'
-import DesignTokens from './pages/DesignTokens.jsx'
 import NotFound from './pages/NotFound.jsx'
 import WardView from './pages/WardView.jsx'
 
 const NAV = [
   { to: '/', label: 'Ward' },
-  { to: '/tokens', label: 'Design tokens' },
+  { to: '/admin', label: 'Admin' },
 ]
 
 /**
@@ -112,7 +112,9 @@ export default function App() {
           <Routes>
             <Route path="/" element={<WardView />} />
             <Route path="/bed/:id" element={<BedDetail />} />
-            <Route path="/tokens" element={<DesignTokens />} />
+            <Route path="/admin" element={<Admin />} />
+            {/* The old standalone token page now lives under Admin. */}
+            <Route path="/tokens" element={<Navigate to="/admin?tab=design" replace />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </main>

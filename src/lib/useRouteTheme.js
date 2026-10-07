@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { useLocation } from 'react-router'
 
 /** Routes that render in light mode. Everything else is the dark ward view. */
-const LIGHT_ROUTES = ['/setup', '/tokens']
+const LIGHT_ROUTES = ['/admin', '/setup']
 
 /**
  * Theme follows the route, not the OS: the live ward view is dark so it does

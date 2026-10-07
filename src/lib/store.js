@@ -46,8 +46,10 @@ export const DEFAULT_SETTINGS = {
  *   while that same alert is the bed's top alert.
  */
 
+let idCounter = 0
 function newId() {
-  return `b-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+  idCounter += 1
+  return `b-${Date.now().toString(36)}${idCounter.toString(36)}${Math.random().toString(36).slice(2, 5)}`
 }
 
 /** @returns {import('./types.js').BedConfig[]} */
@@ -171,4 +173,46 @@ export function loadDemoWard() {
 /** Remove every simulated bed. */
 export function clearSimulatedBeds() {
   commit({ ...state, beds: state.beds.filter((bed) => bed.device !== 'simulated'), acks: {} })
+}
+
+/** Typical gravity-drip orders, so a generated ward looks like a real one. */
+const SIM_FLOW_CHOICES = [60, 75, 80, 90, 100, 125]
+
+/**
+ * Add `count` simulated beds on the next free bed numbers. The scalability
+ * lever: the ward can be grown well past the units on the bench, and every
+ * generated bed still goes through the same validation as the form.
+ * @param {number} count
+ */
+export function addSimulatedBeds(count) {
+  const now = Date.now()
+  const added = []
+  const taken = new Set(state.beds.map((bed) => bed.bedNumber.toLowerCase()))
+  let next = 1
+  for (let i = 0; i < count; i++) {
+    while (taken.has(String(next))) next++
+    taken.add(String(next))
+    const result = validateBedInput(
+      {
+        patientId: `SIM-${Math.floor(10_000 + Math.random() * 90_000)}`,
+        bedNumber: String(next),
+        volumeMl: Math.random() < 0.6 ? '500' : '1000',
+        prescribedFlowMlPerHr: String(SIM_FLOW_CHOICES[Math.floor(Math.random() * SIM_FLOW_CHOICES.length)]),
+        deviceKind: 'simulated',
+        deviceId: '',
+      },
+      [...state.beds, ...added],
+      now,
+    )
+    if (!result.ok) continue
+    added.push({
+      ...result.bed,
+      id: newId(),
+      createdAt: now,
+      startPct: 30 + Math.round(Math.random() * 70),
+      ivStartAt: now - Math.round(Math.random() * 4 * 3_600_000),
+    })
+  }
+  if (added.length > 0) commit({ ...state, beds: [...state.beds, ...added] })
+  return added.length
 }
