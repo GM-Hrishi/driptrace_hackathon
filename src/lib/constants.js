@@ -58,7 +58,14 @@ export const LOW_VOLUME_PERCENT = 10
 /** A bottle at or under this percent is treated as empty. */
 export const BOTTLE_EMPTY_PERCENT = 2
 
-/** Default prescribed flow window. Overridable per bed from the setup screen. */
+/**
+ * How far actual flow may stray from the bed's prescribed rate, as a percent of
+ * that rate, before a medium-priority deviation alarm is raised. Gravity drips
+ * wander more than pumps do, so this is looser than a pump's +/-10%.
+ */
+export const FLOW_DEVIATION_PERCENT = 30
+
+/** Fallback flow window for a bed that has no prescribed rate on file. */
 export const DEFAULT_FLOW_RANGE_ML_PER_HR = { min: 20, max: 180 }
 
 /** Severity order, lowest to highest. Drives critical-first card sorting. */

@@ -52,13 +52,29 @@
  */
 
 /**
+ * @typedef {'bottle-empty' | 'flow-stopped' | 'flow-high' | 'flow-low' | 'low-volume'} AlertKind
+ */
+
+/**
+ * @typedef {Object} ClinicalAlert
+ *   One condition that is currently true for a bed. A bed can have several.
+ * @property {AlertKind} kind
+ * @property {Severity}  severity
+ * @property {string}    reason   Short phrase, e.g. "Flow rate 3.2x prescribed".
+ * @property {string}    action   What staff should check, e.g. "check infusion settings".
+ * @property {string}    message  reason and action joined, for the banner and alarm panel.
+ */
+
+/**
  * @typedef {Object} ActiveAlert
  *   A single resolved alert, used by the card beacon and the topbar banner.
  * @property {string}        bedId
  * @property {string}        bedLabel
  * @property {Severity | 'offline'} severity
  * @property {AlarmPriority} priority
+ * @property {AlertKind | 'sensor-offline'} kind
  * @property {string}        reason   Short clinical phrase shown to staff.
+ * @property {string}        message  Reason plus the action to take.
  */
 
 export {}
