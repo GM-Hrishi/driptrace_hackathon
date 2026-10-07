@@ -1,8 +1,9 @@
-import { Link, NavLink, Route, Routes } from 'react-router'
+import { Link, NavLink, Route, Routes, useLocation } from 'react-router'
 
 import { Beacon } from './components/ui.jsx'
 import { TelemetryProvider, useTelemetry } from './lib/telemetry.jsx'
 import { useRouteTheme } from './lib/useRouteTheme.js'
+import BedDetail from './pages/BedDetail.jsx'
 import DesignTokens from './pages/DesignTokens.jsx'
 import NotFound from './pages/NotFound.jsx'
 import WardView from './pages/WardView.jsx'
@@ -60,6 +61,8 @@ function SeverityBanner() {
 }
 
 function TopBar() {
+  // A bed belongs to the ward, so Ward stays lit on /bed/:id.
+  const { pathname } = useLocation()
   return (
     <header className="dt-chrome sticky top-0 z-20 border-b">
       <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-6 gap-y-3 px-4 py-3 sm:px-6">
@@ -82,7 +85,7 @@ function TopBar() {
               className={({ isActive }) =>
                 [
                   'rounded-pill px-3.5 py-1.5 text-[13px] font-medium transition-colors',
-                  isActive
+                  isActive || (item.to === '/' && pathname.startsWith('/bed/'))
                     ? 'bg-accent text-accent-on'
                     : 'text-ink-muted hover:bg-surface-2 hover:text-ink',
                 ].join(' ')
@@ -108,6 +111,7 @@ export default function App() {
         <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
           <Routes>
             <Route path="/" element={<WardView />} />
+            <Route path="/bed/:id" element={<BedDetail />} />
             <Route path="/tokens" element={<DesignTokens />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
