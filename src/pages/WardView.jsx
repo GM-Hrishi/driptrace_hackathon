@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router'
 
 import AddPatientModal from '../components/AddPatientModal.jsx'
 import { DataGate } from '../components/DataState.jsx'
@@ -10,7 +11,7 @@ import { useTelemetry } from '../lib/telemetry.jsx'
  * Ward overview: every monitored bed, most urgent first.
  */
 export default function WardView() {
-  const { beds, sorted, now, simulation, status } = useTelemetry()
+  const { wardBeds: beds, sorted, now, simulation, status, hiddenSimulatedCount } = useTelemetry()
   const [adding, setAdding] = useState(false)
 
   const count = (channel) => beds.filter((bed) => bed.channel === channel).length
@@ -47,6 +48,14 @@ export default function WardView() {
       </div>
 
       <DataGate skeleton={<WardGridSkeleton />}>
+        {hiddenSimulatedCount > 0 && (
+          <p className="mb-4 text-[12px] text-ink-subtle">
+            {hiddenSimulatedCount} simulated {hiddenSimulatedCount === 1 ? 'bed is' : 'beds are'} hidden.{' '}
+            <Link to="/admin" className="font-medium text-ink-muted underline underline-offset-2 hover:text-ink">
+              Show them in Admin
+            </Link>
+          </p>
+        )}
         <WardGrid beds={sorted} now={now} simulation={simulation} onAddBed={() => setAdding(true)} />
       </DataGate>
 

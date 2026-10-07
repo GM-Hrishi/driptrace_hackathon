@@ -22,6 +22,8 @@ const STORAGE_KEY = 'driptrace.ward.v1'
 /**
  * @typedef {Object} Settings
  * @property {boolean} simulationMode   Drive simulated beds. Off in production builds by default.
+ * @property {boolean} showSimulatedBeds Show SIM beds on the ward. Display only: hidden beds
+ *   keep running and keep their data, and reappear unchanged when shown again.
  * @property {number}  simSpeed         Simulated time multiplier.
  * @property {number}  lowVolumePct     Ward default low-volume threshold.
  * @property {number}  flowDeviationPct Allowed deviation from the prescribed rate.
@@ -31,6 +33,7 @@ const STORAGE_KEY = 'driptrace.ward.v1'
 /** @type {Settings} */
 export const DEFAULT_SETTINGS = {
   simulationMode: import.meta.env.DEV,
+  showSimulatedBeds: true,
   simSpeed: 150,
   lowVolumePct: LOW_VOLUME_PERCENT,
   flowDeviationPct: FLOW_DEVIATION_PERCENT,

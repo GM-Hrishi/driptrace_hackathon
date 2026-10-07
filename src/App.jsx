@@ -19,7 +19,7 @@ const NAV = [
  * "all clear" bar to habituate staff into ignoring the strip.
  */
 function SeverityBanner() {
-  const { topAlert, beds, status } = useTelemetry()
+  const { topAlert, wardBeds: beds, status } = useTelemetry()
   if (status !== 'ready' || !topAlert) return null
 
   const others = beds.filter((bed) => bed.channel !== 'normal').length - 1

@@ -370,6 +370,15 @@ function BedManagement() {
         description="Drives every bed assigned to a simulated unit. Hardware beds are unaffected. Off by default in production builds."
       />
 
+      <div className="mt-5 border-t border-line pt-5">
+        <Switch
+          checked={settings.showSimulatedBeds}
+          onChange={(on) => updateSettings({ showSimulatedBeds: on })}
+          label="Show simulated beds on the ward"
+          description="Hides SIM beds from the ward view and the alert banner without deleting them. They keep running here and reappear unchanged when switched back on."
+        />
+      </div>
+
       <div className="mt-5 flex flex-wrap items-end gap-3 border-t border-line pt-5">
         <label className="text-[13px]">
           <span className="block font-medium">Simulation speed</span>

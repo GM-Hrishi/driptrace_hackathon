@@ -220,10 +220,16 @@ export function TelemetryProvider({ children }) {
           ? 'loading'
           : 'ready'
 
+    // What the ward shows. Hiding simulated beds is a display filter only:
+    // they stay in `beds` (Admin, direct bed links) and keep simulating.
+    const wardBeds = settings.showSimulatedBeds ? beds : beds.filter((bed) => !bed.simulated)
+
     return {
       beds,
-      sorted: sortCriticalFirst(beds, now),
-      topAlert: highestActiveAlert(beds, now),
+      wardBeds,
+      hiddenSimulatedCount: beds.length - wardBeds.length,
+      sorted: sortCriticalFirst(wardBeds, now),
+      topAlert: highestActiveAlert(wardBeds, now),
       status,
       firebase,
       simulation,
@@ -237,7 +243,8 @@ export function TelemetryProvider({ children }) {
 
 /**
  * @returns {{
- *   beds: WardBed[], sorted: WardBed[], topAlert: import('./types.js').ActiveAlert | null,
+ *   beds: WardBed[], wardBeds: WardBed[], hiddenSimulatedCount: number,
+ *   sorted: WardBed[], topAlert: import('./types.js').ActiveAlert | null,
  *   status: 'not-configured' | 'loading' | 'ready',
  *   firebase: { connection: FirebaseConnection, error: string | null },
  *   simulation: boolean, settings: import('./store.js').Settings, now: number,
