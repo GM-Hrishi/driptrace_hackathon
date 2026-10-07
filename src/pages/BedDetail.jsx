@@ -5,6 +5,7 @@ import { DataGate } from '../components/DataState.jsx'
 import FlowTrendChart from '../components/FlowTrendChart.jsx'
 import IVBottle from '../components/IVBottle.jsx'
 import { Beacon, Button, Tag, buttonClass, channelLabel, formatAgo, formatClock } from '../components/ui.jsx'
+import { getEnabledVitals } from '../config/vitals.js'
 import { SCENARIOS } from '../lib/mockBeds.js'
 import { alarmClass } from '../lib/severity.js'
 import { acknowledgeAlert, updateBed } from '../lib/store.js'
@@ -270,8 +271,16 @@ function BedDetailBody({ bed, now, settings }) {
             />
             <Kpi label="Drops / min" value={reading?.dropsPerMin} unit="gtt" stale={offline} sub="20 gtt/mL set" />
             <Kpi label="Weight" value={reading?.weightGrams} unit="g" format={ONE} stale={offline} sub="Bottle + set, HX711" />
-            <Kpi label="Heart rate" value={reading?.heartRate} unit="bpm" stale={offline} sub="MAX30102" />
-            <Kpi label="SpO₂" value={reading?.spo2} unit="%" stale={offline} sub="MAX30102" />
+            {getEnabledVitals(settings).map((vital) => (
+              <Kpi
+                key={vital.key}
+                label={vital.fullLabel}
+                value={vital.getValue(reading) ?? NaN}
+                unit={vital.unit}
+                stale={offline}
+                sub={vital.source}
+              />
+            ))}
           </div>
 
           <section aria-labelledby="trend-title" className="dt-card p-5">

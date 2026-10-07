@@ -8,6 +8,7 @@ import {
   PIN_MAP,
 } from '../lib/constants.js'
 import { isFirebaseConfigured, missingFirebaseConfig } from '../lib/firebase.js'
+import { VITALS } from '../config/vitals.js'
 import { SCENARIOS } from '../lib/mockBeds.js'
 import { sanitizeNumber } from '../lib/sanitize.js'
 import {
@@ -346,6 +347,28 @@ function Thresholds() {
   )
 }
 
+function Vitals() {
+  const { settings } = useTelemetry()
+  return (
+    <Panel className="lg:col-span-2">
+      <SectionTitle hint="Choose which MAX30102 vitals appear on bed cards and bed pages. A vital switched off is not rendered at all.">
+        Vitals
+      </SectionTitle>
+      <div className="grid gap-5 sm:grid-cols-2">
+        {VITALS.map((vital) => (
+          <Switch
+            key={vital.key}
+            checked={vital.isEnabled(settings)}
+            onChange={(on) => updateSettings({ [vital.settingKey]: on })}
+            label={`${vital.fullLabel} (${vital.unit})`}
+            description={`From the ${vital.source} pulse oximeter.`}
+          />
+        ))}
+      </div>
+    </Panel>
+  )
+}
+
 const SPEEDS = [
   { value: 1, label: 'Real time (1x)' },
   { value: 60, label: '1 min per second (60x)' },
@@ -521,6 +544,7 @@ export default function Admin() {
             <BedManagement />
             <Thresholds />
             <Calibration />
+            <Vitals />
           </div>
         )}
       </div>

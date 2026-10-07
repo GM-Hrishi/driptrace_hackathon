@@ -1,7 +1,9 @@
 import NumberFlow from '@number-flow/react'
 import { Link } from 'react-router'
 
+import { getEnabledVitals } from '../config/vitals.js'
 import { alarmClass } from '../lib/severity.js'
+import { useWardStore } from '../lib/store.js'
 import IVBottle from './IVBottle.jsx'
 import { Beacon, Tag, channelLabel, formatAgo } from './ui.jsx'
 
@@ -19,6 +21,8 @@ import { Beacon, Tag, channelLabel, formatAgo } from './ui.jsx'
  */
 export default function BedCard({ bed, now, linked = true }) {
   const Root = linked ? Link : 'div'
+  // Switched off in Admin means not rendered at all, so no space is reserved.
+  const vitals = getEnabledVitals(useWardStore().settings)
   const { channel, acknowledged, reading } = bed
   const offline = channel === 'offline'
   const top = bed.alerts[0]
@@ -106,6 +110,20 @@ export default function BedCard({ bed, now, linked = true }) {
             <span aria-hidden="true">·</span>
             <span>{reading ? `${Math.round(reading.bottlePercentRemaining)}% left` : '—'}</span>
           </p>
+          {vitals.length > 0 && (
+            <p className="dt-nums mt-1.5 flex flex-wrap gap-x-3 text-[12px] text-ink-muted">
+              {vitals.map((vital) => {
+                const value = vital.getValue(reading)
+                return (
+                  <span key={vital.key}>
+                    <span className="text-ink-subtle">{vital.label}</span>{' '}
+                    {value ?? '—'}
+                    {vital.unit === '%' ? '%' : ` ${vital.unit}`}
+                  </span>
+                )
+              })}
+            </p>
+          )}
         </div>
       </div>
 
@@ -126,6 +144,7 @@ export default function BedCard({ bed, now, linked = true }) {
 
 /** Loading placeholder with the card's exact geometry, so nothing jumps when data lands. */
 export function BedCardSkeleton() {
+  const vitalsRow = getEnabledVitals(useWardStore().settings).length > 0
   return (
     <div className="dt-card relative flex h-full flex-col overflow-hidden p-5 pl-6" aria-hidden="true">
       <span className="bg-surface-3 absolute inset-y-0 left-0 w-1.5" />
@@ -142,6 +161,7 @@ export function BedCardSkeleton() {
           <div className="dt-skeleton h-3 w-16 rounded-md" />
           <div className="dt-skeleton mt-2 h-8 w-32 rounded-md" />
           <div className="dt-skeleton mt-2.5 h-3.5 w-28 rounded-md" />
+          {vitalsRow && <div className="dt-skeleton mt-2 h-3.5 w-32 rounded-md" />}
         </div>
       </div>
       <div className="mt-auto flex justify-between gap-3 border-t border-line pt-3">

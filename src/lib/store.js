@@ -24,6 +24,8 @@ const STORAGE_KEY = 'driptrace.ward.v1'
  * @property {boolean} simulationMode   Drive simulated beds. Off in production builds by default.
  * @property {boolean} showSimulatedBeds Show SIM beds on the ward. Display only: hidden beds
  *   keep running and keep their data, and reappear unchanged when shown again.
+ * @property {boolean} heartRateEnabled Show heart rate (see src/config/vitals.js).
+ * @property {boolean} spo2Enabled      Show SpO2 (see src/config/vitals.js).
  * @property {number}  simSpeed         Simulated time multiplier.
  * @property {number}  lowVolumePct     Ward default low-volume threshold.
  * @property {number}  flowDeviationPct Allowed deviation from the prescribed rate.
@@ -34,6 +36,8 @@ const STORAGE_KEY = 'driptrace.ward.v1'
 export const DEFAULT_SETTINGS = {
   simulationMode: import.meta.env.DEV,
   showSimulatedBeds: true,
+  heartRateEnabled: true,
+  spo2Enabled: true,
   simSpeed: 150,
   lowVolumePct: LOW_VOLUME_PERCENT,
   flowDeviationPct: FLOW_DEVIATION_PERCENT,
