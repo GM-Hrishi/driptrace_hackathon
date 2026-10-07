@@ -23,7 +23,7 @@ import { useTelemetry } from '../lib/telemetry.jsx'
 import DesignView from './admin/DesignView.jsx'
 
 /**
- * Admin. Read at a desk, so it renders in the light theme.
+ * Admin. Same dark theme and tokens as the ward view.
  *
  * Everything set here is stored in this browser (see lib/store.js): the
  * Firebase rules deny client writes, so nothing on this page can reach the

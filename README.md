@@ -25,8 +25,8 @@ npm run dev
 |---|---|---|
 | `/` | dark | Ward overview: every bed, critical first, with the topbar banner showing the single highest active alert |
 | `/bed/:id` | dark | One infusion: hero bottle, KPI row, flow trend vs prescribed, alarm panel with acknowledge |
-| `/admin` | light | System status, simulated beds, alarm thresholds, HX711 calibration |
-| `/admin?tab=design` | light | Design View: every token, severity state and alarm animation, live |
+| `/admin` | dark | System status, simulated beds, alarm thresholds, HX711 calibration |
+| `/admin?tab=design` | dark | Design View: every token, severity state and alarm animation, live |
 
 ## Alarms
 
