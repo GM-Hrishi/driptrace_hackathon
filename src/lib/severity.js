@@ -38,12 +38,12 @@ function formatRatio(ratio) {
  * @returns {import('./types.js').ClinicalAlert[]}
  */
 export function deriveAlerts(reading, thresholds = {}) {
-  const {
-    prescribedFlowMlPerHr,
-    lowVolumePct = LOW_VOLUME_PERCENT,
-    flowDeviationPct = FLOW_DEVIATION_PERCENT,
-    flowRange = DEFAULT_FLOW_RANGE_ML_PER_HR,
-  } = thresholds
+  // `??` rather than destructuring defaults: a bed with no override stores
+  // null, and a null threshold must fall back, not silently disable the alarm.
+  const prescribedFlowMlPerHr = thresholds.prescribedFlowMlPerHr
+  const lowVolumePct = thresholds.lowVolumePct ?? LOW_VOLUME_PERCENT
+  const flowDeviationPct = thresholds.flowDeviationPct ?? FLOW_DEVIATION_PERCENT
+  const flowRange = thresholds.flowRange ?? DEFAULT_FLOW_RANGE_ML_PER_HR
   const pct = reading.bottlePercentRemaining ?? 0
   const flow = reading.flowRateMlPerHr ?? 0
 

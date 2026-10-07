@@ -44,6 +44,29 @@
  */
 
 /**
+ * @typedef {'running' | 'fast' | 'slow' | 'stopped' | 'empty' | 'offline'} SimScenario
+ *   What a simulated bed is doing. Ignored for beds wired to a real ESP32.
+ */
+
+/**
+ * @typedef {Object} BedConfig
+ *   A patient/bed as registered on the ward. Configuration, not telemetry.
+ * @property {string}  id                      Registry id, e.g. "b-lx2k9a".
+ * @property {string}  patientId               Patient identifier as typed by staff.
+ * @property {string}  bedNumber               Bed or room number, unique on the ward.
+ * @property {number}  volumeMl                Full IV bottle volume.
+ * @property {number}  prescribedFlowMlPerHr   Ordered rate; deviation alarms key off it.
+ * @property {string}  device                  'simulated', or the ESP32's RTDB key.
+ * @property {number | null} lowVolumePct      Per-bed override; null uses the ward default.
+ * @property {string}  clinician               Nurse or physician, may be empty.
+ * @property {number | null} ivStartAt         Epoch ms the infusion started.
+ * @property {string}  notes
+ * @property {number}  createdAt               Epoch ms.
+ * @property {SimScenario} scenario            Simulated beds only.
+ * @property {number}  [startPct]              Simulated beds only: initial fill.
+ */
+
+/**
  * @typedef {Object} FlowSample
  *   One point on the flow-rate trend chart.
  * @property {number} t                 Epoch ms.
