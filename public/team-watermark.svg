@@ -1,0 +1,57 @@
+<svg viewBox="0 0 1920 1080" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="traceFade" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#38bdf8" stop-opacity="0.12"/>
+    </linearGradient>
+  </defs>
+
+  <!-- PCB-style trace lines -->
+  <g fill="none" stroke="url(#traceFade)" stroke-width="2" stroke-linecap="round">
+    <path d="M120 140 H420 L480 200 H760"/>
+    <path d="M120 140 V380 L180 440 V640"/>
+    <path d="M760 200 V60"/>
+    <path d="M1800 920 H1500 L1440 860 H1180"/>
+    <path d="M1800 920 V680 L1740 620 V420"/>
+    <path d="M1180 860 V1020"/>
+    <path d="M260 900 H560 L620 960 H900 L960 900"/>
+    <path d="M1620 180 H1340 L1280 240 H1040"/>
+  </g>
+
+  <!-- Solder-joint dots at trace nodes -->
+  <g fill="#38bdf8" fill-opacity="0.65">
+    <circle cx="120" cy="140" r="6"/>
+    <circle cx="420" cy="140" r="6"/>
+    <circle cx="760" cy="200" r="6"/>
+    <circle cx="760" cy="60" r="6"/>
+    <circle cx="180" cy="440" r="6"/>
+    <circle cx="1800" cy="920" r="6"/>
+    <circle cx="1500" cy="920" r="6"/>
+    <circle cx="1180" cy="860" r="6"/>
+    <circle cx="1740" cy="620" r="6"/>
+    <circle cx="260" cy="900" r="6"/>
+    <circle cx="620" cy="960" r="6"/>
+    <circle cx="960" cy="900" r="6"/>
+    <circle cx="1620" cy="180" r="6"/>
+    <circle cx="1280" cy="240" r="6"/>
+  </g>
+
+  <!-- Abstract soldering iron, lower-left -->
+  <g transform="translate(90,760) rotate(-18)" stroke="#38bdf8" stroke-opacity="0.5" stroke-width="7" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M0 0 L140 0"/>
+    <path d="M140 0 L260 -40"/>
+    <path d="M260 -40 L300 -40"/>
+    <path d="M0 0 C-10 -14 -10 14 0 0"/>
+    <circle cx="300" cy="-40" r="5" fill="#38bdf8" fill-opacity="0.7" stroke="none"/>
+  </g>
+
+  <!-- Wordmark -->
+  <g font-family="Arial, Helvetica, sans-serif" fill="#e2e8f0">
+    <text x="960" y="520" text-anchor="middle"
+          font-size="128" font-weight="800" letter-spacing="18"
+          fill-opacity="0.9">SOLDERING BOYS</text>
+    <text x="960" y="580" text-anchor="middle"
+          font-size="34" font-weight="500" letter-spacing="10"
+          fill="#38bdf8" fill-opacity="0.85">KERNEL PRIME '26 &#183; DRIPTRACE</text>
+  </g>
+</svg>
