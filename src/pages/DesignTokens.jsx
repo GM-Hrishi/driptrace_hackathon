@@ -1,5 +1,9 @@
-import { alarmClass } from '../lib/severity.js'
+import { useEffect, useState } from 'react'
+
+import IVBottle from '../components/IVBottle.jsx'
+import { alarmClass, resolveChannel } from '../lib/severity.js'
 import { PRIORITY_GLYPH } from '../lib/constants.js'
+import { startMockBeds } from '../lib/mockBeds.js'
 
 /**
  * Design system reference for "Graphite Clinical / Quiet Ward".
@@ -123,6 +127,87 @@ function ThemePanel({ theme }) {
   )
 }
 
+
+/**
+ * Live bottle check, driven by the simulator so the level, the headline number
+ * and the drip rate can be seen agreeing with each other as a bottle drains.
+ */
+function BottleShowcase() {
+  const [beds, setBeds] = useState([])
+
+  useEffect(() => {
+    const sim = startMockBeds(setBeds)
+    return sim.stop
+  }, [])
+
+  if (beds.length === 0) return null
+
+  const hero = beds[0]
+  const heroChannel = resolveChannel(hero)
+
+  return (
+    <section className="mt-10">
+      <h2 className="text-lg">IV bottle</h2>
+      <p className="mt-2 max-w-prose text-[15px] leading-relaxed text-ink-muted">
+        Draining in real time from the simulator. The level is a spring off the fill fraction, the
+        surface is two scrolling waves, and the drip chamber times off drops per minute.
+      </p>
+
+      <div className="mt-6 grid gap-6 lg:grid-cols-[auto_1fr] lg:items-start">
+        <div data-severity={heroChannel} className="dt-card flex flex-col items-center p-6">
+          <IVBottle
+            size="hero"
+            fraction={hero.bottlePercentRemaining / 100}
+            dropsPerMin={hero.dropsPerMin}
+            status={heroChannel}
+            label={hero.label}
+          />
+          <p className="dt-nums mt-4 text-3xl font-semibold">
+            {hero.bottlePercentRemaining.toFixed(1)}
+            <span className="ml-1 text-base font-normal text-ink-muted">%</span>
+          </p>
+          <p className="dt-nums text-[12px] text-ink-subtle">
+            {hero.flowRateMlPerHr} mL/hr · {hero.dropsPerMin} drops/min
+          </p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          {beds.map((bed) => {
+            const channel = resolveChannel(bed)
+            return (
+              <div
+                key={bed.id}
+                data-severity={channel}
+                className="dt-card relative flex flex-col items-center overflow-hidden p-4"
+              >
+                <span
+                  aria-hidden="true"
+                  className={`absolute inset-y-0 left-0 w-1.5 ${alarmClass(channel)}`}
+                  style={{ backgroundColor: 'var(--dt-sev)' }}
+                />
+                <IVBottle
+                  size="compact"
+                  fraction={bed.bottlePercentRemaining / 100}
+                  dropsPerMin={bed.dropsPerMin}
+                  status={channel}
+                  label={bed.label}
+                />
+                <p className="mt-2 text-[12px] font-medium">{bed.label}</p>
+                <p className="dt-nums text-[11px] text-ink-subtle">
+                  {bed.bottlePercentRemaining.toFixed(0)}%
+                </p>
+                <p className="dt-nums text-[10px] tracking-wide text-ink-subtle uppercase">
+                  {channel}
+                </p>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </section>
+  )
+}
+
 export default function DesignTokens() {
   return (
     <section>
@@ -135,6 +220,7 @@ export default function DesignTokens() {
         <ThemePanel theme="light" />
         <ThemePanel theme="dark" />
       </div>
+      <BottleShowcase />
     </section>
   )
 }

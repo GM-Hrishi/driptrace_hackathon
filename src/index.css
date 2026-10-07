@@ -52,6 +52,10 @@
   --dt-offline: #5c636a;
   --dt-offline-tint: #eceef0;
 
+  /* --- IV fluid. Neutral by default so a normal bottle reads as fluid
+         rather than as a grey or a status color. --- */
+  --dt-liquid-neutral: #8aa0b2;
+
   /* --- Geometry --- */
   --dt-radius-card: 24px;
   --dt-radius-control: 12px;
@@ -99,6 +103,8 @@
   --dt-offline: #6d9aa6;
   --dt-offline-tint: #1b2529;
 
+  --dt-liquid-neutral: #5d7d91;
+
   --dt-shadow-card: 0 1px 2px rgb(0 0 0 / 0.3), 0 4px 14px rgb(0 0 0 / 0.34);
   --dt-shadow-card-hover: 0 1px 2px rgb(0 0 0 / 0.34), 0 8px 24px rgb(0 0 0 / 0.42);
   --dt-shadow-chrome: 0 2px 8px rgb(0 0 0 / 0.36), 0 14px 36px rgb(0 0 0 / 0.46);
@@ -137,6 +143,7 @@
 
   --color-sev: var(--dt-sev);
   --color-sev-tint: var(--dt-sev-tint);
+  --color-liquid: var(--dt-liquid);
 
   --radius-card: var(--dt-radius-card);
   --radius-control: var(--dt-radius-control);
@@ -193,20 +200,26 @@
 [data-severity='normal'] {
   --dt-sev: var(--dt-border-strong);
   --dt-sev-tint: var(--dt-surface-2);
+  --dt-liquid: var(--dt-liquid-neutral);
 }
 [data-severity='caution'] {
   --dt-sev: var(--dt-caution);
   --dt-sev-tint: var(--dt-caution-tint);
+  --dt-liquid: var(--dt-caution);
 }
 [data-severity='critical'] {
   --dt-sev: var(--dt-critical);
   --dt-sev-tint: var(--dt-critical-tint);
+  --dt-liquid: var(--dt-critical);
 }
 /* Offline is a sensor fault, not a patient alarm. Its own channel, and it
    deliberately never outranks a clinical state. */
 [data-severity='offline'] {
   --dt-sev: var(--dt-offline);
   --dt-sev-tint: var(--dt-offline-tint);
+  /* A dead sensor means the level is stale, not that the fluid is alarming.
+     The bottle stays neutral and the offline channel is carried by the rail. */
+  --dt-liquid: var(--dt-liquid-neutral);
 }
 
 /* ===========================================================================
