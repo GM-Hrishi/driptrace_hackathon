@@ -8,6 +8,13 @@ import { Button } from '../components/ui.jsx'
 import { useTelemetry } from '../lib/telemetry.jsx'
 
 /**
+ * Opacity of the team watermark behind the ward. Adjustable: raise it if the
+ * background reads too plain, lower it if it starts competing with bed data.
+ * Applied as CSS opacity on the layer, so the SVG itself never changes.
+ */
+const WATERMARK_OPACITY = 0.4
+
+/**
  * Ward overview: every monitored bed, most urgent first.
  */
 export default function WardView() {
@@ -25,7 +32,14 @@ export default function WardView() {
     .join(' · ')
 
   return (
-    <section>
+    // isolate: the watermark's negative z-index stays inside this section,
+    // above the page background but below every card and banner.
+    <section className="relative isolate">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed inset-0 -z-10 bg-[url(/team-watermark.svg)] bg-cover bg-center bg-no-repeat"
+        style={{ opacity: WATERMARK_OPACITY }}
+      />
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Ward overview</h1>
