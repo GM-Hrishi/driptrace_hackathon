@@ -1,7 +1,7 @@
 import { useState } from 'react'
 
 import AddPatientModal from '../components/AddPatientModal.jsx'
-import { CalibrationNotice, DataGate } from '../components/DataState.jsx'
+import { DataGate } from '../components/DataState.jsx'
 import WardGrid, { WardGridSkeleton } from '../components/WardGrid.jsx'
 import { Button } from '../components/ui.jsx'
 import { useTelemetry } from '../lib/telemetry.jsx'
@@ -10,7 +10,7 @@ import { useTelemetry } from '../lib/telemetry.jsx'
  * Ward overview: every monitored bed, most urgent first.
  */
 export default function WardView() {
-  const { beds, sorted, now, simulation, settings, status } = useTelemetry()
+  const { beds, sorted, now, simulation, status } = useTelemetry()
   const [adding, setAdding] = useState(false)
 
   const count = (channel) => beds.filter((bed) => bed.channel === channel).length
@@ -45,8 +45,6 @@ export default function WardView() {
           </Button>
         )}
       </div>
-
-      <CalibrationNotice factor={settings.calibrationFactor} />
 
       <DataGate skeleton={<WardGridSkeleton />}>
         <WardGrid beds={sorted} now={now} simulation={simulation} onAddBed={() => setAdding(true)} />

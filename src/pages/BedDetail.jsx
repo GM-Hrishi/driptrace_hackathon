@@ -1,7 +1,7 @@
 import NumberFlow from '@number-flow/react'
 import { Link, useParams } from 'react-router'
 
-import { CalibrationNotice, DataGate } from '../components/DataState.jsx'
+import { DataGate } from '../components/DataState.jsx'
 import FlowTrendChart from '../components/FlowTrendChart.jsx'
 import IVBottle from '../components/IVBottle.jsx'
 import { Beacon, Button, Tag, buttonClass, channelLabel, formatAgo, formatClock } from '../components/ui.jsx'
@@ -221,8 +221,6 @@ function BedDetailBody({ bed, now, settings }) {
         </dl>
         {bed.notes && <p className="w-full text-[13px] text-ink-muted">{bed.notes}</p>}
       </header>
-
-      <CalibrationNotice factor={settings.calibrationFactor} />
 
       <div className="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
         <div data-severity={channel} className="dt-card relative flex flex-col items-center overflow-hidden p-6 pl-7">

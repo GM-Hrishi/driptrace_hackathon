@@ -1,7 +1,7 @@
 import { useEffect, useId, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 
-import { NotConfiguredCard } from '../components/DataState.jsx'
+import { CalibrationNotice, NotConfiguredCard } from '../components/DataState.jsx'
 import { Button, SectionTitle, Tag, formatAgo } from '../components/ui.jsx'
 import {
   HX711_CALIBRATION_FACTOR_PLACEHOLDER,
@@ -466,6 +466,7 @@ function BedManagement() {
 }
 
 export default function Admin() {
+  const { settings } = useTelemetry()
   const [params, setParams] = useSearchParams()
   const tab = TABS.some((t) => t.id === params.get('tab')) ? params.get('tab') : 'config'
 
@@ -477,7 +478,13 @@ export default function Admin() {
         browser.
       </p>
 
-      <div role="tablist" aria-label="Admin sections" className="rounded-pill mt-6 inline-flex border border-line bg-surface p-1">
+      {/* The calibration warning lives here only: it is an engineering task
+          for whoever sets the system up, not something ward staff act on. */}
+      <div className="mt-6">
+        <CalibrationNotice factor={settings.calibrationFactor} />
+      </div>
+
+      <div role="tablist" aria-label="Admin sections" className="rounded-pill mt-1 inline-flex border border-line bg-surface p-1">
         {TABS.map((t) => (
           <button
             key={t.id}
