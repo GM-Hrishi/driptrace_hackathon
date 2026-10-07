@@ -3,11 +3,11 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router'
 import { MotionConfig } from 'motion/react'
 
-import '@fontsource-variable/ibm-plex-sans'
-// Latin subsets only. The full packages ship Cyrillic, Greek and Vietnamese
-// faces this dashboard never renders.
-import '@fontsource/ibm-plex-mono/latin-400.css'
-import '@fontsource/ibm-plex-mono/latin-600.css'
+// UI sans: Plus Jakarta Sans, refined and geometric without being decorative.
+// Readouts: Geist Mono, fixed-width so live numbers never jitter sideways.
+// Both are variable fonts; unicode-range keeps the browser on the Latin files.
+import '@fontsource-variable/plus-jakarta-sans/wght.css'
+import '@fontsource-variable/geist-mono/wght.css'
 import './index.css'
 
 import App from './App.jsx'

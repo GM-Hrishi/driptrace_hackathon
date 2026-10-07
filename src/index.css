@@ -153,8 +153,8 @@
   --shadow-card-hover: var(--dt-shadow-card-hover);
   --shadow-chrome: var(--dt-shadow-chrome);
 
-  --font-sans: 'IBM Plex Sans Variable', ui-sans-serif, system-ui, sans-serif;
-  --font-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', monospace;
+  --font-sans: 'Plus Jakarta Sans Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Geist Mono Variable', ui-monospace, 'SFMono-Regular', monospace;
 }
 
 @layer base {
