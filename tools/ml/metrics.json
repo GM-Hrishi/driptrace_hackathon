@@ -1,0 +1,71 @@
+{
+  "features": [
+    "cv",
+    "rmssd_n",
+    "pnn50",
+    "medad_n",
+    "tpr"
+  ],
+  "train_records": [
+    "afdb/03665",
+    "afdb/04015",
+    "afdb/04126",
+    "afdb/04746",
+    "afdb/04908",
+    "afdb/04936",
+    "afdb/05091",
+    "afdb/05261",
+    "afdb/06453",
+    "afdb/06995",
+    "afdb/07859",
+    "afdb/07910",
+    "afdb/08219",
+    "afdb/08378",
+    "afdb/08405",
+    "afdb/08434",
+    "afdb/08455",
+    "nsrdb/16265",
+    "nsrdb/16272",
+    "nsrdb/16420",
+    "nsrdb/16483",
+    "nsrdb/16539",
+    "nsrdb/16773",
+    "nsrdb/17052",
+    "nsrdb/18177",
+    "nsrdb/18184",
+    "nsrdb/19088",
+    "nsrdb/19090",
+    "nsrdb/19093",
+    "nsrdb/19830"
+  ],
+  "test_records": [
+    "afdb/00735",
+    "afdb/04043",
+    "afdb/04048",
+    "afdb/05121",
+    "afdb/06426",
+    "afdb/07162",
+    "afdb/07879",
+    "afdb/08215",
+    "nsrdb/16273",
+    "nsrdb/16786",
+    "nsrdb/16795",
+    "nsrdb/17453",
+    "nsrdb/19140"
+  ],
+  "test_auc": 0.9893,
+  "test_at_0.5": {
+    "threshold": 0.5,
+    "accuracy": 0.9618,
+    "sensitivity": 0.9511,
+    "specificity": 0.9711,
+    "windows": 43836
+  },
+  "test_at_0.8": {
+    "threshold": 0.8,
+    "accuracy": 0.9262,
+    "sensitivity": 0.8548,
+    "specificity": 0.9883,
+    "windows": 43836
+  }
+}

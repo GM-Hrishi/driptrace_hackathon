@@ -68,6 +68,7 @@
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <time.h>
+#include "vitals_ml.h"
 #include <sys/time.h>
 
 // ================= Pins (locked, all tested) =================
@@ -126,7 +127,8 @@ const uint8_t SPO2_DECIMATE = 2;             // average pairs -> the 25 sps the 
 const uint8_t MAX_PART_ID = 0x15;
 const uint8_t HR_KEEP = 5;
 const uint32_t HR_STALE_MS = 5000;           // no accepted beat this long -> HR not current
-const uint32_t VITALS_HOLD_MS = 8000;        // last good HR/SpO2 shown this long through motion or dropouts
+const uint32_t VITALS_HOLD_MS = 8000;
+const uint32_t SPO2_FRESH_MS = 3000;        // SpO2 recomputed within this = current, for the unresponsive rule        // last good HR/SpO2 shown this long through motion or dropouts
 const uint16_t FINGER_ON_SAMPLES = 10;       // 0.2 s above threshold = finger placed
 const uint16_t FINGER_OFF_SAMPLES = 50;      // 1 s below threshold = finger removed (shorter = a slip)
 // Motion: the pulse moves IR by ~0.1% of DC per sample at 50 sps; a moving
@@ -173,12 +175,16 @@ struct State {
   uint8_t signal;        // Signal
   uint32_t lastMotionMs; // last finger movement (millis)
   uint32_t fingerSinceMs;
+  VitalsOutputs ml;      // rhythm model, patient baseline, unresponsive rule
   // network
   bool wifi;
   bool timeSynced;
   int lastHttp;
 };
 State g = {};
+VitalsBrain brain;                  // owned by vitalsTask after setup()
+volatile uint8_t simMode = SIM_OFF; // serial "sim ..." demo injection
+volatile bool baselineResetRequested = false;
 SemaphoreHandle_t stateMutex;
 
 #define LOCK() xSemaphoreTake(stateMutex, portMAX_DELAY)
@@ -532,6 +538,7 @@ void vitalsTask(void *) {
   };
   auto fingerRemoved = [&]() {
     fingerOn = false;
+    brain.rr.clear();
     resetHr();
     resetSpo2Window();
     lastAlgoHrMs = lastSpo2Ms = heldHrMs = 0;
@@ -629,6 +636,7 @@ void vitalsTask(void *) {
         // While moving: no beat intervals (one spanning the motion is
         // meaningless) and no SpO2 window containing motion samples.
         haveBeat = false;
+        brain.rr.restartClock();
         resetSpo2Window();
         continue;
       }
@@ -638,6 +646,8 @@ void vitalsTask(void *) {
       // once 3 beats are known, an early detection is treated as a second
       // bump inside the same beat and ignored.
       if (beat) {
+        // Rhythm stream: keeps irregular beats (see vitals_ml.h).
+        brain.rr.onDetection((uint32_t)(sampleIdx * (1000.0f / MAX_SPS)));
         if (!haveBeat) {
           haveBeat = true;  // first beat only starts the clock
           lastBeatIdx = sampleIdx;
@@ -721,6 +731,28 @@ void vitalsTask(void *) {
 
     uint8_t signal = !fingerOn ? SIG_NO_FINGER : moving ? SIG_MOTION : hrFresh ? SIG_OK : SIG_ACQUIRING;
 
+    // Demo injection of a synthetic beat stream (serial "sim regular|irregular").
+    uint8_t sim = simMode;
+    static uint32_t simNextMs = 0;
+    if ((sim == SIM_REGULAR || sim == SIM_IRREGULAR) && (int32_t)(now - simNextMs) >= 0) {
+      uint16_t rr = sim == SIM_REGULAR ? (uint16_t)(800 + random(-15, 16)) : (uint16_t)random(450, 1150);
+      brain.rr.push(rr);
+      simNextMs = now + rr;
+    }
+    if (baselineResetRequested) {
+      baselineResetRequested = false;
+      brain.baseline.reset();
+      Serial.println("Patient baseline reset; learning again.");
+    }
+    uint32_t lastBeatMs = max(lastAcceptedMs, brain.rr.lastKeptMs);
+    VitalsInputs vin = {fingerOn, fingerSinceMs, lastMotionMs, lastBeatMs,
+                        hrFresh, hr, spo2Shown && now - lastSpo2Ms < SPO2_FRESH_MS, 0};
+    LOCK();
+    vin.spo2 = g.spo2;
+    UNLOCK();
+    brain.evaluate(now, vin, sim == SIM_REGULAR || sim == SIM_IRREGULAR);
+    brain.checkUnresponsive(now, vin, (SimMode)sim);
+
     LOCK();
     g.maxConnected = true;
     g.finger = fingerOn;
@@ -730,11 +762,23 @@ void vitalsTask(void *) {
     g.signal = signal;
     g.lastMotionMs = lastMotionMs;
     g.fingerSinceMs = fingerOn ? fingerSinceMs : 0;
+    g.ml = brain.out;
     UNLOCK();
 
     // FIFO holds 32 samples (0.64 s at 50 sps); 20 ms between checks is plenty.
     vTaskDelay(pdMS_TO_TICKS(20));
   }
+}
+
+// Rhythm model, patient baseline and unresponsive flag, as JSON fields.
+int appendMlJson(char *out, size_t cap, const VitalsOutputs &m) {
+  int n = snprintf(out, cap, ",\"rhythm\":\"%s\",\"baselinePct\":%u,\"hrOutOfRange\":%s,\"unresponsive\":%s",
+                   rhythmName(m.rhythm), m.baselinePct, m.hrOutOfRange ? "true" : "false",
+                   m.unresponsive ? "true" : "false");
+  if (m.irregularProb >= 0) n += snprintf(out + n, cap - n, ",\"irregularProb\":%.2f", m.irregularProb);
+  if (m.baselineLearned) n += snprintf(out + n, cap - n, ",\"hrLow\":%d,\"hrHigh\":%d", m.hrLow, m.hrHigh);
+  if (m.unresponsive) n += snprintf(out + n, cap - n, ",\"unresponsiveWhy\":\"%s\"", m.unresponsiveWhy);
+  return n;
 }
 
 // =====================================================================
@@ -799,6 +843,7 @@ void netTask(void *) {
                     s.finger ? "true" : "false", signalName(s.maxConnected ? s.signal : SIG_OFFLINE));
     if (s.maxConnected && s.hrValid) len += snprintf(body + len, sizeof(body) - len, ",\"heartRate\":%d", s.hr);
     if (s.maxConnected && s.spo2Valid) len += snprintf(body + len, sizeof(body) - len, ",\"spo2\":%d", s.spo2);
+    len += appendMlJson(body + len, sizeof(body) - len, s.ml);
     len += snprintf(body + len, sizeof(body) - len, "}");
 
     int code = -1;
@@ -892,6 +937,8 @@ void drawBanner(const String &text, uint16_t color) {
 }
 
 bool emptyAlarmActive = false, vitalsAlarmActive = false;
+bool rhythmAlarmActive = false;
+uint32_t lastUnrespBeepMs = 0;
 uint32_t lastEmptyBeepMs = 0;
 
 void updateDisplayAndAlarms() {
@@ -955,12 +1002,26 @@ void updateDisplayAndAlarms() {
   if (vitalsNow && !vitalsAlarmActive && !emptyNow) playAlertVitals();
   vitalsAlarmActive = vitalsNow;
 
+  // Possible unresponsive patient: repeats every 5 s while it lasts.
+  bool unresp = s.maxConnected && s.ml.unresponsive;
+  if (unresp && millis() - lastUnrespBeepMs > 5000) {
+    lastUnrespBeepMs = millis();
+    playAlertVitals();
+  }
+  // Irregular rhythm / HR outside this patient's range: once per episode.
+  bool rhythmNow = s.maxConnected && (s.ml.rhythm == RHYTHM_IRREGULAR || s.ml.hrOutOfRange);
+  if (rhythmNow && !rhythmAlarmActive && !emptyNow && !vitalsNow) playAlertVitals();
+  rhythmAlarmActive = rhythmNow;
+
   // Banner: most important first.
-  if (!s.hxConnected) drawBanner("LOAD CELL OFFLINE", ST77XX_RED);
+  if (unresp) drawBanner("CHECK PATIENT NOW", ST77XX_RED);
+  else if (!s.hxConnected) drawBanner("LOAD CELL OFFLINE", ST77XX_RED);
   else if (!s.tared) drawBanner("TARING - HOOK EMPTY", ST77XX_YELLOW);
   else if (!s.bottlePresent) drawBanner("HANG IV BOTTLE", ST77XX_YELLOW);
   else if (s.bottleEmpty) drawBanner("BOTTLE EMPTY", ST77XX_RED);
   else if (vitalsNow) drawBanner("VITALS ALERT", ST77XX_RED);
+  else if (s.maxConnected && s.ml.rhythm == RHYTHM_IRREGULAR) drawBanner("IRREGULAR HEARTBEAT", ST77XX_ORANGE);
+  else if (s.maxConnected && s.ml.hrOutOfRange) drawBanner("HR OUTSIDE PATIENT RANGE", ST77XX_ORANGE);
   else if (s.percent < 10) drawBanner("LOW VOLUME", ST77XX_ORANGE);
   else if (!s.maxConnected) drawBanner("PULSE-OX OFFLINE", ST77XX_ORANGE);
   else if (!s.wifi) drawBanner("OK - NO WIFI", ST77XX_ORANGE);
@@ -1014,15 +1075,44 @@ void setup() {
   setupLoadCell();
   setupWiFiAndTime();
 
+  Serial.println("Rhythm model self-test:");
+  Serial.println(rhythmSelfTest() ? "MODEL SELFTEST OK" : "MODEL SELFTEST FAILED");
+  brain.begin();
+  if (brain.out.baselineLearned) {
+    Serial.printf("Patient baseline loaded: %d-%d bpm (serial 'baseline reset' for a new patient)\n",
+                  brain.out.hrLow, brain.out.hrHigh);
+  }
+
   setupDisplayLayout();
   xTaskCreatePinnedToCore(vitalsTask, "vitals", 8192, NULL, 1, NULL, 0);
   xTaskCreatePinnedToCore(netTask, "net", 8192, NULL, 1, NULL, 1);
   Serial.println("DripTrace v3 up.");
 }
 
+// Serial commands: "sim regular|irregular|unresponsive|off", "baseline reset".
+void serviceSerial() {
+  static String line;
+  while (Serial.available()) {
+    char c = Serial.read();
+    if (c != '\n' && c != '\r') {
+      if (line.length() < 64) line += c;
+      continue;
+    }
+    line.trim();
+    if (line == "sim regular") simMode = SIM_REGULAR;
+    else if (line == "sim irregular") simMode = SIM_IRREGULAR;
+    else if (line == "sim unresponsive") simMode = SIM_UNRESPONSIVE;
+    else if (line == "sim off") simMode = SIM_OFF;
+    else if (line == "baseline reset") baselineResetRequested = true;
+    if (line.length()) Serial.printf("cmd '%s' -> sim=%u\n", line.c_str(), simMode);
+    line = "";
+  }
+}
+
 void loop() {
   serviceLoadCell();
   updateDisplayAndAlarms();
+  serviceSerial();
 
   static uint32_t lastStat = 0;
   if (millis() - lastStat >= 5000) {
@@ -1031,9 +1121,11 @@ void loop() {
     LOCK();
     s = g;
     UNLOCK();
-    Serial.printf("STAT hx=%d tared=%d bottle=%d gross=%.1fg fluid=%.1fmL pct=%.0f empty=%d flow=%.1f | max=%d finger=%d sig=%s hr=%d(%d) spo2=%d(%d) | wifi=%d time=%d http=%d\n",
+    Serial.printf("STAT hx=%d tared=%d bottle=%d gross=%.1fg fluid=%.1fmL pct=%.0f empty=%d flow=%.1f | max=%d finger=%d sig=%s hr=%d(%d) spo2=%d(%d) | rhythm=%s p=%.2f base=%u%% %d-%d oor=%d unresp=%d | wifi=%d time=%d http=%d\n",
                   s.hxConnected, s.tared, s.bottlePresent, s.grossG, s.fluidMl, s.percent, s.bottleEmpty,
-                  s.flowMlPerHr, s.maxConnected, s.finger, signalName(s.signal), s.hr, s.hrValid, s.spo2, s.spo2Valid, s.wifi,
+                  s.flowMlPerHr, s.maxConnected, s.finger, signalName(s.signal), s.hr, s.hrValid, s.spo2, s.spo2Valid,
+                  rhythmName(s.ml.rhythm), s.ml.irregularProb, s.ml.baselinePct, s.ml.hrLow, s.ml.hrHigh,
+                  s.ml.hrOutOfRange, s.ml.unresponsive, s.wifi,
                   s.timeSynced, s.lastHttp);
   }
   delay(5);
