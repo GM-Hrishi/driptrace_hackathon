@@ -98,3 +98,32 @@ struct PulseDetector {
     return sample * PD_SAMPLE_MS;
   }
 };
+
+// SpO2 from a 4 s window at 25 sps, ratio of ratios: R = (ACred/DCred) /
+// (ACir/DCir), AC = RMS after removing a 1 s centred moving average.
+// Maxim's lookup curve is flat near the top (bench: R 0.40 -> 99.7%, any R
+// 0.3-0.5 reads 99-100), so the common linear calibration is used instead:
+// SpO2 = 104 - 17 R. Bench: R 0.41 -> 97% against a smartwatch's 98%.
+// Single-point check only; not a calibrated medical oximeter.
+const float SPO2_A = 104.0f, SPO2_B = 17.0f;
+const uint16_t SPO2_MA = 25;
+
+inline float spo2Ratio(const uint32_t *ir, const uint32_t *red, uint16_t n) {
+  if (n <= 2 * SPO2_MA) return -1;
+  double dcI = 0, dcR = 0;
+  for (uint16_t i = 0; i < n; i++) { dcI += ir[i]; dcR += red[i]; }
+  dcI /= n;
+  dcR /= n;
+  double sI = 0, sR = 0;
+  uint16_t m = 0;
+  for (uint16_t i = SPO2_MA; i + SPO2_MA < n; i++) {
+    double maI = 0, maR = 0;
+    for (uint16_t j = i - SPO2_MA / 2; j <= i + SPO2_MA / 2; j++) { maI += ir[j]; maR += red[j]; }
+    double aI = ir[i] - maI / SPO2_MA, aR = red[i] - maR / SPO2_MA;
+    sI += aI * aI;
+    sR += aR * aR;
+    m++;
+  }
+  if (!m || sI <= 0 || dcI <= 0 || dcR <= 0) return -1;
+  return (float)((sqrt(sR / m) / dcR) / (sqrt(sI / m) / dcI));
+}

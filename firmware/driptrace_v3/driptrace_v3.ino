@@ -712,6 +712,11 @@ void vitalsTask(void *) {
         int32_t spo2 = 0, aHr = 0;
         int8_t spo2Ok = 0, hrOk = 0;
         maxim_heart_rate_and_oxygen_saturation(irLin, BUFFER_SIZE, redLin, &spo2, &spo2Ok, &aHr, &hrOk);
+        // SpO2 from our own ratio of ratios (see pulse_detector.h); Maxim's value
+        // sat at 99-100% for any healthy reading.
+        float spo2R = spo2Ratio(irLin, redLin, BUFFER_SIZE);
+        spo2Ok = spo2R > 0.3f && spo2R < 1.6f;
+        spo2 = spo2Ok ? (int32_t)constrain(lroundf(SPO2_A - SPO2_B * spo2R), 0L, 100L) : 0;
         // A one-off jump of more than 4 points (bench: 100 -> 71 right after
         // motion) is held back until the next window confirms it.
         if (spo2Ok == 1 && spo2 >= 70 && spo2 <= 100) {
