@@ -85,6 +85,15 @@
         "unresponsiveWhy": {
           ".validate": "newData.isString() && newData.val().length <= 16"
         },
+        "fluidMl": {
+          ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 5000"
+        },
+        "capacityMl": {
+          ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() <= 5000"
+        },
+        "clamp": {
+          ".validate": "newData.isString() && newData.val().matches(/^(open|closed|offline)$/)"
+        },
         "$other": {
           ".validate": false
         }
