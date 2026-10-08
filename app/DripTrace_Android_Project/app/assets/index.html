@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<title>IV FluidWatch</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet"/>
+<style>
+:root{--bg:#060d14;--card:#0c1520;--card2:#111e2c;--border:#162030;--accent:#00d4ff;--green:#10e898;--red:#ff4d6d;--amber:#f5c518;--text:#dff0ff;--muted:#4a6a80;}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',sans-serif;min-height:100vh;max-width:430px;margin:0 auto;overflow-x:hidden;user-select:none;}
+
+/* ══ PIN LOCK SCREEN ══════════════════════════════════════════ */
+#pinScreen{position:fixed;inset:0;background:var(--bg);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 24px;transition:opacity .3s;}
+#pinScreen.hidden{opacity:0;pointer-events:none;}
+.pin-logo{font-size:3.2rem;margin-bottom:10px;}
+.pin-appname{font-size:1.5rem;font-weight:700;color:var(--accent);letter-spacing:-.5px;}
+.pin-tagline{font-size:.7rem;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-bottom:36px;}
+.pin-prompt{font-size:.78rem;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-bottom:18px;min-height:20px;text-align:center;}
+.pin-dots{display:flex;gap:18px;margin-bottom:32px;}
+.pin-dot{width:20px;height:20px;border-radius:50%;border:2px solid var(--border);background:transparent;transition:all .18s;}
+.pin-dot.filled{background:var(--accent);border-color:var(--accent);box-shadow:0 0 12px rgba(0,212,255,.5);}
+.pin-dot.error{background:var(--red);border-color:var(--red);animation:shake .4s ease;}
+@keyframes shake{0%,100%{transform:translateX(0);}20%{transform:translateX(-6px);}40%{transform:translateX(6px);}60%{transform:translateX(-4px);}80%{transform:translateX(4px);}}
+.pin-pad{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;width:100%;max-width:290px;}
+.pkey{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:20px 10px;font-size:1.4rem;font-weight:700;color:var(--text);cursor:pointer;text-align:center;transition:all .12s;font-family:'JetBrains Mono',monospace;-webkit-tap-highlight-color:transparent;}
+.pkey:active{background:var(--card2);transform:scale(.91);border-color:var(--accent);}
+.pkey.pzero{grid-column:2;}
+.pkey.pdel{background:transparent;border-color:transparent;color:var(--muted);font-size:1rem;}
+.pkey.pdel:active{color:var(--red);}
+.pin-err{margin-top:14px;font-size:.75rem;color:var(--red);font-family:'JetBrains Mono',monospace;min-height:18px;text-align:center;}
+.pin-skip{margin-top:22px;font-size:.72rem;color:var(--muted);text-decoration:underline;cursor:pointer;font-family:'JetBrains Mono',monospace;}
+
+/* ══ SETUP PIN OVERLAY ════════════════════════════════════════ */
+#setupPin{position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:9998;display:none;align-items:center;justify-content:center;padding:20px;}
+#setupPin.show{display:flex;}
+.setup-box{background:var(--card);border:1px solid var(--border);border-radius:22px;padding:28px 22px;width:100%;max-width:320px;text-align:center;}
+.setup-title{font-size:1rem;font-weight:700;margin-bottom:4px;}
+.setup-sub{font-size:.7rem;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-bottom:20px;line-height:1.6;}
+.setup-dots{display:flex;gap:14px;justify-content:center;margin-bottom:16px;}
+.setup-dot{width:16px;height:16px;border-radius:50%;border:2px solid var(--border);transition:all .18s;}
+.setup-dot.filled{background:var(--accent);border-color:var(--accent);}
+.setup-pad{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-bottom:14px;}
+.skey{background:var(--card2);border:1px solid var(--border);border-radius:12px;padding:14px 8px;font-size:1.15rem;font-weight:700;color:var(--text);cursor:pointer;font-family:'JetBrains Mono',monospace;transition:all .12s;}
+.skey:active{transform:scale(.9);border-color:var(--accent);}
+.skey.szero{grid-column:2;}
+.skey.sdel{background:transparent;border-color:transparent;color:var(--muted);}
+.setup-err{font-size:.7rem;color:var(--red);font-family:'JetBrains Mono',monospace;min-height:16px;}
+.setup-cancel{font-size:.7rem;color:var(--muted);text-decoration:underline;cursor:pointer;margin-top:12px;display:inline-block;}
+
+/* ══ MAIN APP ═════════════════════════════════════════════════ */
+#mainApp{display:none;}
+#mainApp.show{display:block;}
+.status-bar{padding:18px 20px 0;display:flex;justify-content:space-between;align-items:center;font-size:.7rem;color:var(--muted);font-family:'JetBrains Mono',monospace;}
+.nav-bar{display:flex;align-items:center;justify-content:space-between;padding:10px 18px 12px;}
+.nav-title{font-size:1.25rem;font-weight:700;}.nav-title span{color:var(--accent);}
+.nav-sub{font-size:.6rem;color:var(--muted);font-family:'JetBrains Mono',monospace;}
+.nav-actions{display:flex;gap:8px;}
+.nav-btn{width:36px;height:36px;background:var(--card);border:1px solid var(--border);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:.9rem;cursor:pointer;}
+.nav-btn:active{background:var(--card2);}
+.scroll{padding:0 14px 110px;overflow-y:auto;}
+
+/* ══ PATIENT CARD ═════════════════════════════════════════════ */
+.patient-card{background:linear-gradient(135deg,#0c1a25,#0e2030);border:1px solid rgba(0,212,255,.2);border-radius:18px;padding:16px 18px;margin-bottom:14px;position:relative;overflow:hidden;}
+.patient-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--accent),var(--green));}
+.pt-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;}
+.pt-name{font-size:1.1rem;font-weight:700;color:var(--text);}
+.pt-badge{background:rgba(0,212,255,.12);border:1px solid rgba(0,212,255,.25);border-radius:999px;padding:3px 11px;font-size:.63rem;color:var(--accent);font-family:'JetBrains Mono',monospace;white-space:nowrap;}
+.pt-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;}
+.pt-item{display:flex;flex-direction:column;gap:2px;}
+.pt-lbl{font-size:.58rem;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;font-family:'JetBrains Mono',monospace;}
+.pt-val{font-size:.82rem;font-weight:600;color:var(--text);font-family:'JetBrains Mono',monospace;}
+.pt-empty{opacity:.45;font-style:italic;}
+
+/* ══ CONFIG SHEET ═════════════════════════════════════════════ */
+.cfg-sheet{display:none;background:var(--card);border:1px solid var(--border);border-radius:18px;padding:18px;margin-bottom:14px;animation:sd .2s ease;}
+.cfg-sheet.open{display:block;}
+@keyframes sd{from{opacity:0;transform:translateY(-8px);}to{opacity:1;transform:translateY(0);}}
+.cfg-sec{font-size:.63rem;color:var(--accent);text-transform:uppercase;letter-spacing:1px;font-family:'JetBrains Mono',monospace;margin:14px 0 8px;padding-top:12px;border-top:1px solid var(--border);}
+.cfg-sec:first-child{margin-top:0;padding-top:0;border-top:none;}
+.ig{display:flex;flex-direction:column;gap:3px;margin-bottom:10px;}
+.ig label{font-size:.63rem;color:var(--muted);font-family:'JetBrains Mono',monospace;text-transform:uppercase;letter-spacing:.5px;}
+.ig input,.ig select{background:var(--card2);border:1px solid var(--border);border-radius:9px;padding:9px 12px;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:.82rem;outline:none;width:100%;}
+.ig input:focus,.ig select:focus{border-color:var(--accent);}
+.ig select option{background:var(--card2);}
+.btn-p{width:100%;padding:11px;background:linear-gradient(135deg,var(--accent),#0099bb);color:#000;border:none;border-radius:11px;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:.88rem;cursor:pointer;margin-top:4px;}
+.btn-warn{width:100%;padding:10px;background:transparent;border:1px solid rgba(255,77,109,.35);border-radius:11px;font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:.8rem;color:var(--red);cursor:pointer;margin-top:8px;}
+.btn-warn:active{background:rgba(255,77,109,.1);}
+
+/* ══ GAUGE ════════════════════════════════════════════════════ */
+.gauge-card{background:var(--card);border:1px solid var(--border);border-radius:22px;padding:20px 18px 18px;margin-bottom:14px;text-align:center;overflow:hidden;}
+.gauge-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;}
+.gauge-lbl{font-size:.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:1px;font-family:'JetBrains Mono',monospace;}
+.live-b{display:flex;align-items:center;gap:5px;background:rgba(16,232,152,.1);border:1px solid rgba(16,232,152,.25);border-radius:999px;padding:3px 9px;font-size:.62rem;color:var(--green);font-family:'JetBrains Mono',monospace;}
+.ld{width:6px;height:6px;border-radius:50%;background:var(--green);animation:blink 1.5s infinite;}
+@keyframes blink{0%,100%{opacity:1;}50%{opacity:.2;}}
+.gauge-svg-wrap{display:flex;justify-content:center;margin:0;line-height:0;}
+.gauge-svg-wrap svg{display:block;}
+.g-track{fill:none;stroke:#111e2c;stroke-width:14;stroke-linecap:round;}
+.g-fill{fill:none;stroke-width:14;stroke-linecap:round;transition:stroke-dashoffset .9s ease,stroke .4s ease;}
+.g-center{font-size:2rem;font-weight:700;font-family:'JetBrains Mono',monospace;fill:var(--accent);}
+.g-unit{font-size:.75rem;fill:var(--muted);font-family:'JetBrains Mono',monospace;}
+.gauge-ts{font-size:.68rem;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:10px;}
+
+/* ══ BAR ══════════════════════════════════════════════════════ */
+.bar-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:16px 18px;margin-bottom:14px;}
+.bar-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}
+.bar-title{font-size:.68rem;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--muted);}
+.bar-pct{font-size:.82rem;font-family:'JetBrains Mono',monospace;color:var(--accent);}
+.bar-track{height:14px;background:var(--card2);border-radius:999px;overflow:hidden;border:1px solid var(--border);}
+.bar-fill{height:100%;border-radius:999px;background:linear-gradient(90deg,var(--accent),var(--green));transition:width .8s ease;}
+.bar-fill.warn{background:linear-gradient(90deg,var(--amber),var(--red));}
+.bar-labels{display:flex;justify-content:space-between;margin-top:6px;font-size:.62rem;color:var(--muted);font-family:'JetBrains Mono',monospace;}
+
+/* ══ MINI STATS ═══════════════════════════════════════════════ */
+.mini-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;}
+.mc{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px;}
+.mc-l{font-size:.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:1px;font-family:'JetBrains Mono',monospace;margin-bottom:5px;}
+.mc-v{font-size:1.35rem;font-weight:700;font-family:'JetBrains Mono',monospace;}
+.mc-u{font-size:.65rem;color:var(--muted);margin-left:2px;}
+
+/* ══ CHART ════════════════════════════════════════════════════ */
+.chart-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:16px 18px;margin-bottom:14px;}
+.chart-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;}
+.chart-title{font-size:.68rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted);}
+.chart-wrap{height:130px;position:relative;}
+#cSpin{position:absolute;inset:0;background:rgba(6,13,20,.7);display:none;align-items:center;justify-content:center;font-size:.75rem;color:var(--muted);font-family:'JetBrains Mono',monospace;border-radius:10px;}
+
+/* ══ FEED ═════════════════════════════════════════════════════ */
+.feed-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:16px 18px;margin-bottom:14px;}
+.feed-title{font-size:.68rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:12px;}
+.fi{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);}
+.fi:last-child{border-bottom:none;}
+.fi-ml{font-size:.9rem;font-weight:600;font-family:'JetBrains Mono',monospace;}
+.fi-inf{font-size:.68rem;color:var(--muted);margin-top:2px;}
+.fi-time{font-size:.65rem;color:var(--muted);font-family:'JetBrains Mono',monospace;}
+.fbadge{padding:2px 8px;border-radius:999px;font-size:.6rem;font-family:'JetBrains Mono',monospace;}
+.fb-ok{background:rgba(16,232,152,.12);color:var(--green);border:1px solid rgba(16,232,152,.25);}
+.fb-low{background:rgba(245,197,24,.12);color:var(--amber);border:1px solid rgba(245,197,24,.25);}
+.fb-crit{background:rgba(255,77,109,.12);color:var(--red);border:1px solid rgba(255,77,109,.25);}
+
+/* ══ BOTTOM NAV ═══════════════════════════════════════════════ */
+.bottom-nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:430px;background:rgba(6,13,20,.95);border-top:1px solid var(--border);display:flex;padding:10px 0 22px;backdrop-filter:blur(12px);}
+.bn-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;padding:4px 0;}
+.bn-icon{font-size:1.2rem;}
+.bn-lbl{font-size:.58rem;color:var(--muted);font-family:'JetBrains Mono',monospace;}
+</style>
+</head>
+<body>
+
+<!-- ══ PIN LOCK SCREEN ══════════════════════════════════════════ -->
+<div id="pinScreen">
+  <div class="pin-logo">🏥</div>
+  <div class="pin-appname">IV FluidWatch</div>
+  <div class="pin-tagline">IoT Infusion Monitor · ESP32</div>
+  <div class="pin-prompt" id="pinPrompt">Enter PIN to unlock</div>
+  <div class="pin-dots">
+    <div class="pin-dot" id="pd0"></div>
+    <div class="pin-dot" id="pd1"></div>
+    <div class="pin-dot" id="pd2"></div>
+    <div class="pin-dot" id="pd3"></div>
+  </div>
+  <div class="pin-pad">
+    <div class="pkey" onclick="pinKey('1')">1</div>
+    <div class="pkey" onclick="pinKey('2')">2</div>
+    <div class="pkey" onclick="pinKey('3')">3</div>
+    <div class="pkey" onclick="pinKey('4')">4</div>
+    <div class="pkey" onclick="pinKey('5')">5</div>
+    <div class="pkey" onclick="pinKey('6')">6</div>
+    <div class="pkey" onclick="pinKey('7')">7</div>
+    <div class="pkey" onclick="pinKey('8')">8</div>
+    <div class="pkey" onclick="pinKey('9')">9</div>
+    <div class="pkey pzero" onclick="pinKey('0')">0</div>
+    <div class="pkey pdel" onclick="pinDel()">⌫</div>
+  </div>
+  <div class="pin-err" id="pinErr"></div>
+  <div class="pin-skip" id="pinSkip" onclick="skipPin()">No PIN set — tap to enter app</div>
+</div>
+
+<!-- ══ SETUP PIN MODAL ═══════════════════════════════════════════ -->
+<div id="setupPin">
+  <div class="setup-box">
+    <div class="setup-title" id="setupTitle">Set a 4-Digit PIN</div>
+    <div class="setup-sub" id="setupSub">Enter a PIN to protect access to IV FluidWatch. You will be asked for this PIN every time you open the app.</div>
+    <div class="setup-dots">
+      <div class="setup-dot" id="sd0"></div>
+      <div class="setup-dot" id="sd1"></div>
+      <div class="setup-dot" id="sd2"></div>
+      <div class="setup-dot" id="sd3"></div>
+    </div>
+    <div class="setup-pad">
+      <div class="skey" onclick="setupKey('1')">1</div>
+      <div class="skey" onclick="setupKey('2')">2</div>
+      <div class="skey" onclick="setupKey('3')">3</div>
+      <div class="skey" onclick="setupKey('4')">4</div>
+      <div class="skey" onclick="setupKey('5')">5</div>
+      <div class="skey" onclick="setupKey('6')">6</div>
+      <div class="skey" onclick="setupKey('7')">7</div>
+      <div class="skey" onclick="setupKey('8')">8</div>
+      <div class="skey" onclick="setupKey('9')">9</div>
+      <div class="skey szero" onclick="setupKey('0')">0</div>
+      <div class="skey sdel" onclick="setupDel()">⌫</div>
+    </div>
+    <div class="setup-err" id="setupErr"></div>
+    <div class="setup-cancel" onclick="cancelSetupPin()">Cancel</div>
+  </div>
+</div>
+
+<!-- ══ MAIN APP ══════════════════════════════════════════════════ -->
+<div id="mainApp">
+
+  <div class="status-bar">
+    <span id="clock">--:--</span>
+    <span>IV FluidWatch v1.0</span>
+  </div>
+
+  <div class="nav-bar">
+    <div>
+      <div class="nav-title">IV <span>FluidWatch</span></div>
+      <div class="nav-sub">ThingSpeak · ESP32 · HX711</div>
+    </div>
+    <div class="nav-actions">
+      <div class="nav-btn" onclick="fetchData()" title="Refresh">🔄</div>
+      <div class="nav-btn" onclick="toggleCfg()" title="Settings">⚙️</div>
+      <div class="nav-btn" onclick="lockApp()" title="Lock">🔒</div>
+    </div>
+  </div>
+
+  <div class="scroll">
+
+    <!-- Config Sheet -->
+    <div class="cfg-sheet" id="cfgSheet">
+
+      <div class="cfg-sec">👤 Patient Info</div>
+      <div style="background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.15);border-radius:10px;padding:11px 14px;margin-bottom:10px;font-size:.72rem;color:var(--muted);font-family:'JetBrains Mono',monospace;line-height:1.6;">
+        📡 Patient name, ward &amp; bed are assigned by hospital management and fetched automatically from ThingSpeak Fields 5, 6, 7 on each refresh.
+      </div>
+      <div class="ig"><label>Patient Name</label>
+        <input id="ptName" type="text" placeholder="Auto-filled from ThingSpeak" autocomplete="off" readonly style="opacity:.6;cursor:not-allowed;"/></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div class="ig"><label>Ward</label>
+          <input id="ptWard" type="text" placeholder="Auto-filled from ThingSpeak" autocomplete="off" readonly style="opacity:.6;cursor:not-allowed;"/></div>
+        <div class="ig"><label>Room / Bed No</label>
+          <input id="ptBed" type="text" placeholder="Auto-filled from ThingSpeak" autocomplete="off" readonly style="opacity:.6;cursor:not-allowed;"/></div>
+      </div>
+
+      <div class="cfg-sec">📡 ThingSpeak</div>
+      <div class="ig"><label>Channel ID</label>
+        <input id="chId" type="number" placeholder="e.g. 2345678" inputmode="numeric"/></div>
+      <div class="ig"><label>Read API Key (optional for public)</label>
+        <input id="apiKey" type="text" placeholder="e.g. ABCDEF1234567890" autocomplete="off"/></div>
+
+      <div class="cfg-sec">💉 Infusion Setup</div>
+      <div class="ig">
+        <label>Bag Capacity</label>
+        <div style="display:flex;align-items:center;gap:10px;background:var(--card2);border:1px solid var(--border);border-radius:9px;padding:9px 12px;">
+          <span style="font-size:.9rem;">🏥</span>
+          <span id="bagCapDisplay" style="font-family:'JetBrains Mono',monospace;font-size:.82rem;color:var(--accent);flex:1;">Fetching from ThingSpeak…</span>
+          <span style="font-size:.65rem;color:var(--muted);font-family:'JetBrains Mono',monospace;">Field 8</span>
+        </div>
+        <div style="font-size:.62rem;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:3px;">Auto-assigned by hospital management · read-only</div>
+      </div>
+      <!-- Hidden inputs kept for JS compatibility -->
+      <select id="bagCap" style="display:none">
+        <option value="250">250</option>
+        <option value="500" selected>500</option>
+        <option value="1000">1000</option>
+        <option value="custom">Custom</option>
+      </select>
+      <input id="customCap" type="number" style="display:none" value="500"/>
+      <div id="customWrap" style="display:none"></div>
+      <div class="ig"><label>Data Points</label>
+        <select id="results">
+          <option value="10">10</option>
+          <option value="20" selected>20</option>
+          <option value="50">50</option>
+          <option value="100">100</option>
+        </select>
+      </div>
+
+      <button class="btn-p" onclick="fetchData()">✅ Save &amp; Connect</button>
+
+      <div class="cfg-sec">🔒 Security</div>
+      <button class="btn-p" id="pinActionBtn" onclick="openSetupPin()" style="background:linear-gradient(135deg,#7c3aed,#5b21b6);margin-bottom:0;">Set / Change PIN</button>
+      <button class="btn-warn" id="removePinBtn" onclick="removePin()" style="display:none;">Remove PIN</button>
+    </div>
+
+    <!-- Patient Card -->
+    <div class="patient-card" id="patientCard">
+      <div class="pt-header">
+        <div class="pt-name" id="dispName"><span class="pt-empty">— Patient Name —</span></div>
+        <div class="pt-badge">🏥 Active Infusion</div>
+      </div>
+      <div class="pt-row">
+        <div class="pt-item">
+          <div class="pt-lbl">Ward</div>
+          <div class="pt-val" id="dispWard"><span class="pt-empty">—</span></div>
+        </div>
+        <div class="pt-item">
+          <div class="pt-lbl">Room / Bed</div>
+          <div class="pt-val" id="dispBed"><span class="pt-empty">—</span></div>
+        </div>
+        <div class="pt-item">
+          <div class="pt-lbl">Bag Size</div>
+          <div class="pt-val" id="displayBag">— mL</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Gauge -->
+    <div class="gauge-card">
+      <div class="gauge-top">
+        <span class="gauge-lbl">Fluid Remaining</span>
+        <div class="live-b"><div class="ld"></div>LIVE</div>
+      </div>
+      <div class="gauge-svg-wrap">
+        <svg width="220" height="140" viewBox="0 0 220 140">
+          <!-- Arc: centre 110,120 radius 90 — starts bottom-left, ends bottom-right, semi arc -->
+          <path class="g-track" d="M20,120 A90,90 0 1,1 200,120" stroke-dasharray="283" stroke-dashoffset="0"/>
+          <path class="g-fill" id="gBar" d="M20,120 A90,90 0 1,1 200,120" stroke="#00d4ff" stroke-dasharray="283" stroke-dashoffset="283"/>
+          <text class="g-center" id="gVal" x="110" y="105" text-anchor="middle">—</text>
+          <text class="g-unit" x="110" y="122" text-anchor="middle">mL remaining</text>
+        </svg>
+      </div>
+      <div class="gauge-ts" id="gTs">Waiting for data…</div>
+    </div>
+
+    <!-- Progress Bar -->
+    <div class="bar-card">
+      <div class="bar-header">
+        <span class="bar-title">Infusion Progress</span>
+        <span class="bar-pct" id="barPct">0%</span>
+      </div>
+      <div class="bar-track"><div class="bar-fill" id="barFill" style="width:0%"></div></div>
+      <div class="bar-labels"><span>0 mL</span><span id="barMid">—</span><span id="barMax">—</span></div>
+    </div>
+
+    <!-- Mini Stats -->
+    <div class="mini-grid">
+      <div class="mc">
+        <div class="mc-l">Infused</div>
+        <div class="mc-v" id="mInfused">—<span class="mc-u">mL</span></div>
+      </div>
+      <div class="mc">
+        <div class="mc-l">Weight</div>
+        <div class="mc-v" id="mWeight">—<span class="mc-u">kg</span></div>
+      </div>
+      <div class="mc">
+        <div class="mc-l">Rate</div>
+        <div class="mc-v" id="mRate">—<span class="mc-u">mL/hr</span></div>
+      </div>
+      <div class="mc">
+        <div class="mc-l">ETA Empty</div>
+        <div class="mc-v" id="mEta" style="font-size:1.1rem">—</div>
+      </div>
+    </div>
+
+    <!-- Chart -->
+    <div class="chart-card">
+      <div class="chart-hdr">
+        <span class="chart-title">Fluid Trend</span>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="spark"></canvas>
+        <div id="cSpin">⏳ Loading…</div>
+      </div>
+    </div>
+
+    <!-- Feed -->
+    <div class="feed-card">
+      <div class="feed-title">📋 Recent Readings</div>
+      <div id="feedList"><div style="text-align:center;color:var(--muted);font-size:.78rem;padding:20px;font-family:'JetBrains Mono',monospace;">No data yet — tap Refresh</div></div>
+    </div>
+
+  </div><!-- /scroll -->
+
+  <!-- Bottom Nav -->
+  <div class="bottom-nav">
+    <div class="bn-item" onclick="fetchData()">
+      <div class="bn-icon">📊</div><div class="bn-lbl">Infusion</div>
+    </div>
+    <div class="bn-item" onclick="fetchData()">
+      <div class="bn-icon">🔄</div><div class="bn-lbl">Refresh</div>
+    </div>
+    <div class="bn-item" onclick="toggleCfg()">
+      <div class="bn-icon">⚙️</div><div class="bn-lbl">Settings</div>
+    </div>
+    <div class="bn-item" onclick="lockApp()">
+      <div class="bn-icon">🔒</div><div class="bn-lbl">Lock</div>
+    </div>
+  </div>
+
+</div><!-- /mainApp -->
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+const DENSITY = 1.006;
+let sparkInst = null;
+
+// ══ STORAGE ══════════════════════════════════════════════════════
+function storageSave(key, val){
+  try{
+    if(window.AndroidBridge && AndroidBridge.savePreference)
+      AndroidBridge.savePreference(key, String(val));
+    localStorage.setItem(key, String(val));
+  }catch(e){}
+}
+function storageLoad(key){
+  try{
+    if(window.AndroidBridge && AndroidBridge.loadPreference){
+      const v = AndroidBridge.loadPreference(key);
+      if(v && v !== 'null' && v !== '') return v;
+    }
+    return localStorage.getItem(key) || '';
+  }catch(e){ return localStorage.getItem(key) || ''; }
+}
+function storageDel(key){
+  try{
+    if(window.AndroidBridge && AndroidBridge.savePreference)
+      AndroidBridge.savePreference(key,'');
+    localStorage.removeItem(key);
+  }catch(e){}
+}
+
+// ══ PIN LOGIC ═════════════════════════════════════════════════════
+let pinBuffer = '';
+
+function initPin(){
+  const saved = storageLoad('iv_pin');
+  if(saved && saved.length === 4){
+    document.getElementById('pinSkip').style.display = 'none';
+    document.getElementById('pinPrompt').textContent = 'Enter PIN to unlock';
+    updatePinButtons();
+  } else {
+    document.getElementById('pinSkip').style.display = 'block';
+    document.getElementById('pinPrompt').textContent = 'No PIN set';
+    updatePinButtons();
+  }
+}
+
+function updatePinDots(buf, prefix){
+  for(let i=0;i<4;i++){
+    const d = document.getElementById(prefix+i);
+    d.classList.toggle('filled', i < buf.length);
+    d.classList.remove('error');
+  }
+}
+
+function updatePinButtons(){ updatePinDots(pinBuffer,'pd'); }
+
+function pinKey(k){
+  if(pinBuffer.length >= 4) return;
+  pinBuffer += k;
+  updatePinDots(pinBuffer,'pd');
+  document.getElementById('pinErr').textContent = '';
+  if(pinBuffer.length === 4) setTimeout(checkPin, 120);
+}
+
+function pinDel(){
+  pinBuffer = pinBuffer.slice(0,-1);
+  updatePinDots(pinBuffer,'pd');
+}
+
+function checkPin(){
+  const saved = storageLoad('iv_pin');
+  if(!saved || saved.length !== 4){
+    // No PIN set, just unlock
+    unlockApp(); return;
+  }
+  if(pinBuffer === saved){
+    unlockApp();
+  } else {
+    // Wrong PIN — shake dots red
+    for(let i=0;i<4;i++) document.getElementById('pd'+i).classList.add('error');
+    document.getElementById('pinErr').textContent = '✗ Incorrect PIN. Try again.';
+    setTimeout(()=>{
+      pinBuffer = '';
+      updatePinDots(pinBuffer,'pd');
+    }, 900);
+  }
+}
+
+function skipPin(){
+  const saved = storageLoad('iv_pin');
+  if(!saved || saved.length !== 4) unlockApp();
+}
+
+function unlockApp(){
+  pinBuffer = '';
+  document.getElementById('pinScreen').classList.add('hidden');
+  document.getElementById('mainApp').classList.add('show');
+  loadAllSettings();
+  updatePinBtnLabel();
+  // Auto-fetch if credentials saved
+  const ch = storageLoad('iv_channel_id');
+  if(ch && ch.trim() !== ''){
+    setTimeout(fetchData, 600);
+  } else {
+    setTimeout(()=> document.getElementById('cfgSheet').classList.add('open'), 400);
+  }
+}
+
+function lockApp(){
+  pinBuffer = '';
+  updatePinDots(pinBuffer,'pd');
+  document.getElementById('pinErr').textContent = '';
+  document.getElementById('pinPrompt').textContent = 'Enter PIN to unlock';
+  const saved = storageLoad('iv_pin');
+  document.getElementById('pinSkip').style.display = (saved && saved.length===4) ? 'none' : 'block';
+  document.getElementById('pinScreen').classList.remove('hidden');
+  document.getElementById('mainApp').classList.remove('show');
+}
+
+// ══ SETUP PIN ═════════════════════════════════════════════════════
+let setupBuffer = '';
+let setupStep = 'enter'; // 'enter' | 'confirm'
+let setupFirst = '';
+
+function openSetupPin(){
+  setupBuffer = ''; setupStep = 'enter'; setupFirst = '';
+  document.getElementById('setupTitle').textContent = 'Set a 4-Digit PIN';
+  document.getElementById('setupSub').textContent = 'Enter a new 4-digit PIN to protect access.';
+  document.getElementById('setupErr').textContent = '';
+  updateSetupDots();
+  document.getElementById('setupPin').classList.add('show');
+}
+
+function cancelSetupPin(){
+  document.getElementById('setupPin').classList.remove('show');
+}
+
+function updateSetupDots(){
+  for(let i=0;i<4;i++){
+    document.getElementById('sd'+i).classList.toggle('filled', i < setupBuffer.length);
+  }
+}
+
+function setupKey(k){
+  if(setupBuffer.length >= 4) return;
+  setupBuffer += k;
+  updateSetupDots();
+  document.getElementById('setupErr').textContent = '';
+  if(setupBuffer.length === 4) setTimeout(handleSetupStep, 120);
+}
+
+function setupDel(){
+  setupBuffer = setupBuffer.slice(0,-1);
+  updateSetupDots();
+}
+
+function handleSetupStep(){
+  if(setupStep === 'enter'){
+    setupFirst = setupBuffer;
+    setupBuffer = '';
+    setupStep = 'confirm';
+    document.getElementById('setupTitle').textContent = 'Confirm PIN';
+    document.getElementById('setupSub').textContent = 'Re-enter the same PIN to confirm.';
+    updateSetupDots();
+  } else {
+    if(setupBuffer === setupFirst){
+      storageSave('iv_pin', setupBuffer);
+      document.getElementById('setupPin').classList.remove('show');
+      updatePinBtnLabel();
+      alert('✅ PIN set successfully! You will be asked for it next time you open the app.');
+    } else {
+      document.getElementById('setupErr').textContent = '✗ PINs do not match. Try again.';
+      setupBuffer = ''; setupStep = 'enter'; setupFirst = '';
+      document.getElementById('setupTitle').textContent = 'Set a 4-Digit PIN';
+      document.getElementById('setupSub').textContent = 'PINs did not match. Please start over.';
+      updateSetupDots();
+    }
+  }
+}
+
+function removePin(){
+  if(confirm('Remove PIN lock? The app will open without asking for a PIN.')){
+    storageDel('iv_pin');
+    updatePinBtnLabel();
+    alert('PIN removed.');
+  }
+}
+
+function updatePinBtnLabel(){
+  const saved = storageLoad('iv_pin');
+  const hasPin = saved && saved.length === 4;
+  document.getElementById('removePinBtn').style.display = hasPin ? 'block' : 'none';
+  document.getElementById('pinActionBtn').textContent = hasPin ? '🔑 Change PIN' : '🔒 Set PIN';
+}
+
+// ══ SETTINGS LOAD / SAVE ══════════════════════════════════════════
+function loadAllSettings(){
+  const setVal = (id, key) => {
+    const v = storageLoad(key);
+    if(v) document.getElementById(id).value = v;
+  };
+  setVal('ptName',  'iv_pt_name');
+  setVal('ptWard',  'iv_pt_ward');
+  setVal('ptBed',   'iv_pt_bed');
+  setVal('chId',    'iv_channel_id');
+  setVal('apiKey',  'iv_api_key');
+  setVal('results', 'iv_results');
+
+  const cap = storageLoad('iv_bag_cap');
+  if(cap){
+    const sel = document.getElementById('bagCap');
+    const match = [...sel.options].find(o => o.value === cap);
+    if(match){ sel.value = cap; }
+    else { sel.value='custom'; document.getElementById('customCap').value=cap; }
+    // Update the display label
+    const capNum = parseFloat(cap);
+    if(!isNaN(capNum))
+      document.getElementById('bagCapDisplay').textContent = capNum.toFixed(0) + ' mL';
+  }
+  refreshPatientCard();
+}
+
+function saveAllSettings(){
+  storageSave('iv_pt_name',    document.getElementById('ptName').value.trim());
+  storageSave('iv_pt_ward',    document.getElementById('ptWard').value.trim());
+  storageSave('iv_pt_bed',     document.getElementById('ptBed').value.trim());
+  storageSave('iv_channel_id', document.getElementById('chId').value.trim());
+  storageSave('iv_api_key',    document.getElementById('apiKey').value.trim());
+  storageSave('iv_results',    document.getElementById('results').value);
+  const cap = document.getElementById('bagCap').value;
+  storageSave('iv_bag_cap', cap==='custom' ? document.getElementById('customCap').value : cap);
+  refreshPatientCard();
+}
+
+function refreshPatientCard(){
+  const name = storageLoad('iv_pt_name');
+  const ward = storageLoad('iv_pt_ward');
+  const bed  = storageLoad('iv_pt_bed');
+  document.getElementById('dispName').innerHTML = name
+    ? name
+    : '<span class="pt-empty">— Patient Name —</span>';
+  document.getElementById('dispWard').innerHTML = ward
+    ? ward
+    : '<span class="pt-empty">—</span>';
+  document.getElementById('dispBed').innerHTML = bed
+    ? bed
+    : '<span class="pt-empty">—</span>';
+}
+
+// ══ UI HELPERS ════════════════════════════════════════════════════
+function tick(){ document.getElementById('clock').textContent = new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}); }
+tick(); setInterval(tick,1000);
+
+function getCap(){
+  const v = document.getElementById('bagCap').value;
+  if(v==='custom') return parseFloat(document.getElementById('customCap').value)||500;
+  return parseFloat(v);
+}
+
+function toggleCfg(){ document.getElementById('cfgSheet').classList.toggle('open'); }
+
+function setGauge(remaining, cap){
+  const ratio = Math.min(remaining/cap,1);
+  const offset = 283-(283*ratio);
+  const b = document.getElementById('gBar');
+  b.style.strokeDashoffset = offset;
+  b.style.stroke = remaining<cap*0.2?'#ff4d6d':remaining<cap*0.5?'#f5c518':'#00d4ff';
+  document.getElementById('gVal').textContent = remaining.toFixed(0);
+}
+
+// ══ FETCH DATA ════════════════════════════════════════════════════
+async function fetchData(){
+  const ch = document.getElementById('chId').value.trim();
+  const ak = document.getElementById('apiKey').value.trim();
+  const rs = document.getElementById('results').value||20;
+  if(!ch){
+    document.getElementById('cfgSheet').classList.add('open');
+    alert('Please enter your Channel ID in Settings ⚙');
+    return;
+  }
+  saveAllSettings();
+  document.getElementById('cSpin').style.display = 'flex';
+  document.getElementById('cfgSheet').classList.remove('open');
+
+  try{
+    // ── Fetch fluid data (field 1) ────────────────────────────────
+    const fluidUrl = ak
+      ? `https://api.thingspeak.com/channels/${ch}/fields/1.json?api_key=${ak}&results=${rs}`
+      : `https://api.thingspeak.com/channels/${ch}/fields/1.json?results=${rs}`;
+    const fluidRes  = await fetch(fluidUrl);
+    if(!fluidRes.ok) throw new Error('HTTP '+fluidRes.status);
+    const fluidData = await fluidRes.json();
+
+    // ── Fetch patient info (fields 5,6,7,8) from last entry ───────
+    // Uses a separate call to get the most recently pushed patient info
+    const infoUrl = ak
+      ? `https://api.thingspeak.com/channels/${ch}/feeds/last.json?api_key=${ak}`
+      : `https://api.thingspeak.com/channels/${ch}/feeds/last.json`;
+    try{
+      const infoRes  = await fetch(infoUrl);
+      if(infoRes.ok){
+        const info = await infoRes.json();
+        // field5=name, field6=ward, field7=bed, field8=bagCap
+        const tsName = (info.field5 || '').trim();
+        const tsWard = (info.field6 || '').trim();
+        const tsBed  = (info.field7 || '').trim();
+        const tsCap  = (info.field8 || '').trim();
+
+        // Only update from ThingSpeak if values present
+        if(tsName){
+          storageSave('iv_pt_name', tsName);
+          document.getElementById('ptName').value = tsName;
+        }
+        if(tsWard){
+          storageSave('iv_pt_ward', tsWard);
+          document.getElementById('ptWard').value = tsWard;
+        }
+        if(tsBed){
+          storageSave('iv_pt_bed', tsBed);
+          document.getElementById('ptBed').value = tsBed;
+        }
+        if(tsCap && !isNaN(parseFloat(tsCap))){
+          // Update bag capacity from ThingSpeak field 8
+          const sel = document.getElementById('bagCap');
+          const match = [...sel.options].find(o => o.value === tsCap);
+          if(match){ sel.value = tsCap; }
+          else { sel.value='custom'; document.getElementById('customCap').value=tsCap; }
+          storageSave('iv_bag_cap', tsCap);
+          // Update display label
+          document.getElementById('bagCapDisplay').textContent = parseFloat(tsCap).toFixed(0) + ' mL';
+        }
+        refreshPatientCard();
+      }
+    }catch(e){ /* patient info fetch failed silently — use cached */ }
+
+    // ── Process fluid entries ─────────────────────────────────────
+    const cap = getCap();
+    const EMPTY_BAG_KG = 0.055;
+    const entries = (fluidData.feeds||[])
+      .filter(f=>f.field1!==null && f.field1!=='')
+      .map(f=>{
+        const kg = parseFloat(f.field1);
+        const fluidKg = Math.max(0, kg-EMPTY_BAG_KG);
+        const ml = (fluidKg*1000)/DENSITY;
+        const remaining = Math.max(0,Math.min(ml,cap));
+        return{time:new Date(f.created_at),weightKg:kg,remaining,infused:Math.max(0,cap-remaining)};
+      }).filter(e=>!isNaN(e.weightKg));
+    if(!entries.length) throw new Error('No data found. Check credentials.');
+    renderAll(entries,cap);
+
+  }catch(err){ alert('Error: '+err.message); }
+  finally{ document.getElementById('cSpin').style.display='none'; }
+}
+
+function renderAll(entries,cap){
+  const latest = entries[entries.length-1];
+  const pct = ((latest.infused/cap)*100).toFixed(1);
+  let rate=0;
+  if(entries.length>=2){
+    const a=entries[entries.length-2],b=entries[entries.length-1];
+    const dh=(b.time-a.time)/3600000;
+    if(dh>0) rate=Math.max(0,(a.remaining-b.remaining)/dh);
+  }
+  const eta = rate>0 ? latest.remaining/rate : null;
+  const etaStr = eta!=null?(eta<1?Math.round(eta*60)+' min':eta.toFixed(1)+' hr'):'—';
+
+  setGauge(latest.remaining,cap);
+  document.getElementById('gTs').textContent = 'Updated: '+latest.time.toLocaleTimeString();
+  const fill=document.getElementById('barFill');
+  fill.style.width=pct+'%';
+  fill.className='bar-fill'+(latest.remaining<cap*0.2?' warn':'');
+  document.getElementById('barPct').textContent = pct+'%';
+  document.getElementById('barMid').textContent = (cap/2)+' mL';
+  document.getElementById('barMax').textContent = cap+' mL';
+  document.getElementById('displayBag').textContent = cap+' mL';
+  document.getElementById('mInfused').innerHTML = latest.infused.toFixed(1)+'<span class="mc-u">mL</span>';
+  document.getElementById('mWeight').innerHTML  = latest.weightKg.toFixed(4)+'<span class="mc-u">kg</span>';
+  document.getElementById('mRate').innerHTML    = rate.toFixed(1)+'<span class="mc-u">mL/hr</span>';
+  document.getElementById('mEta').textContent   = etaStr;
+  renderSpark(entries,cap);
+  renderFeed(entries,cap);
+}
+
+function renderSpark(entries,cap){
+  const labels=entries.map(e=>e.time.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}));
+  if(sparkInst) sparkInst.destroy();
+  const ctx=document.getElementById('spark').getContext('2d');
+  const g1=ctx.createLinearGradient(0,0,0,150);g1.addColorStop(0,'rgba(0,212,255,.25)');g1.addColorStop(1,'rgba(0,212,255,0)');
+  const g2=ctx.createLinearGradient(0,0,0,150);g2.addColorStop(0,'rgba(16,232,152,.15)');g2.addColorStop(1,'rgba(16,232,152,0)');
+  sparkInst=new Chart(ctx,{type:'line',data:{labels,datasets:[
+    {label:'Remaining',data:entries.map(e=>e.remaining.toFixed(1)),borderColor:'#00d4ff',backgroundColor:g1,borderWidth:1.5,pointRadius:entries.length>20?0:2,fill:true,tension:0.4},
+    {label:'Infused',data:entries.map(e=>e.infused.toFixed(1)),borderColor:'#10e898',backgroundColor:g2,borderWidth:1,pointRadius:0,fill:true,tension:0.4}
+  ]},options:{responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{labels:{color:'#4a6a80',font:{family:'JetBrains Mono',size:9}}},
+      tooltip:{backgroundColor:'#0c1520',borderColor:'#162030',borderWidth:1,titleColor:'#4a6a80',bodyColor:'#dff0ff',
+        titleFont:{family:'JetBrains Mono',size:9},bodyFont:{family:'JetBrains Mono',size:11},callbacks:{label:c=>` ${c.parsed.y} mL`}}},
+    scales:{
+      x:{ticks:{color:'#2a4050',font:{family:'JetBrains Mono',size:8},maxTicksLimit:5,maxRotation:0},grid:{color:'#0e1c28'}},
+      y:{ticks:{color:'#2a4050',font:{family:'JetBrains Mono',size:8},callback:v=>v+'mL'},grid:{color:'#0e1c28'},max:cap,min:0}
+    },animation:{duration:500}}});
+}
+
+function renderFeed(entries,cap){
+  const items=[...entries].reverse().slice(0,15).map(e=>{
+    const pct=((e.infused/cap)*100).toFixed(0);
+    let bc,bl;
+    if(e.remaining>cap*0.5){bc='fb-ok';bl='OK';}
+    else if(e.remaining>cap*0.2){bc='fb-low';bl='LOW';}
+    else{bc='fb-crit';bl='CRIT';}
+    const t=e.time.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    return `<div class="fi"><div><div class="fi-ml">${e.remaining.toFixed(1)} mL left</div>
+      <div class="fi-inf">▲ ${e.infused.toFixed(1)} mL infused (${pct}%)</div></div>
+      <div style="text-align:right"><span class="fbadge ${bc}">${bl}</span>
+      <div class="fi-time" style="margin-top:4px">${t}</div></div></div>`;
+  });
+  document.getElementById('feedList').innerHTML = items.join('');
+}
+
+// ══ STARTUP ═══════════════════════════════════════════════════════
+window.addEventListener('load', function(){
+  initPin();
+  const saved = storageLoad('iv_pin');
+  if(!saved || saved.length !== 4){
+    // No PIN — go straight in
+    unlockApp();
+  }
+  // else PIN screen stays visible, user must enter PIN
+});
+</script>
+</body>
+</html>

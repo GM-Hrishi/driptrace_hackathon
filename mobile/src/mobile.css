@@ -1,0 +1,26 @@
+/* Mobile-only additions on top of src/index.css. Tailwind scans the shared
+   website components as well, since the app renders them. */
+@source "../../src";
+
+@layer base {
+  html,
+  body {
+    /* No rubber-band bounce or pull-to-refresh: the data is live. */
+    overscroll-behavior-y: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    min-height: 100dvh;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  /* Text a nurse might copy (patient IDs, notes) stays selectable. */
+  input,
+  textarea,
+  .dt-nums {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+}
