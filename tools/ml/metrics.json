@@ -53,19 +53,19 @@
     "nsrdb/17453",
     "nsrdb/19140"
   ],
-  "test_auc": 0.9893,
+  "test_auc": 0.9852,
   "test_at_0.5": {
     "threshold": 0.5,
-    "accuracy": 0.9618,
-    "sensitivity": 0.9511,
-    "specificity": 0.9711,
-    "windows": 43836
+    "accuracy": 0.9485,
+    "sensitivity": 0.9288,
+    "specificity": 0.9655,
+    "windows": 43741
   },
   "test_at_0.8": {
     "threshold": 0.8,
-    "accuracy": 0.9262,
-    "sensitivity": 0.8548,
-    "specificity": 0.9883,
-    "windows": 43836
+    "accuracy": 0.8739,
+    "sensitivity": 0.7385,
+    "specificity": 0.991,
+    "windows": 43741
   }
 }

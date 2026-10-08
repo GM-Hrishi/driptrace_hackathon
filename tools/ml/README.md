@@ -35,10 +35,10 @@ Records are split 70/30 into train and test, **by patient record, never by windo
 
 | Threshold | Accuracy | Sensitivity | Specificity |
 |---|---|---|---|
-| p ≥ 0.5 | 96.2 % | 95.1 % | 97.1 % |
-| p ≥ 0.8 (alarm threshold) | 92.6 % | 85.5 % | 98.8 % |
+| p ≥ 0.5 | 94.9 % | 92.9 % | 96.6 % |
+| p ≥ 0.8 (alarm threshold) | 87.4 % | 73.9 % | 99.1 % |
 
-AUC 0.989 over 43,836 test windows. The firmware alarms only after 3 consecutive windows at p ≥ 0.8 (about 15 s of evidence), which trades some sensitivity for fewer false alarms.
+AUC 0.985 over 43,741 test windows. On a recorded healthy bench pulse (firmware beat detector) the model scores 0.10 (was 0.79 before training with the measured 35 ms jitter). The firmware alarms only after 3 consecutive windows at p ≥ 0.8 (about 15 s of evidence), which trades some sensitivity for fewer false alarms.
 
 ## Limits (say these out loud at the demo)
 
