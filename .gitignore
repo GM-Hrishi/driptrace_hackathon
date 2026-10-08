@@ -61,3 +61,14 @@ desktop.ini
 # Deploy platform local dirs
 .vercel
 .netlify
+
+# Android app: generated web bundle and Gradle / IDE output
+app/DripTrace_Android_Project/app/app/src/main/assets/web/
+app/DripTrace_Android_Project/app/**/build/
+app/DripTrace_Android_Project/app/.gradle/
+app/DripTrace_Android_Project/app/local.properties
+*.apk
+app/DripTrace_Android_Project.zip
+
+# Firmware credentials (WiFi, database secret)
+secrets.h
