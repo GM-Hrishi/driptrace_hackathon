@@ -156,6 +156,18 @@ const char *signalName(uint8_t s) {
   }
 }
 
+// ================= Backflow clamp (separate ESP32 + SG90) =================
+// UART1: S3 GPIO17 (TX) -> clamp node GPIO16 (RX); node GPIO4 (TX) -> S3 GPIO18 (RX); GND shared.
+// The S3 decides; the node (firmware/clamp_node) only moves the servo.
+#define CLAMP_TX 17
+#define CLAMP_RX 18
+const uint32_t CLAMP_SEND_MS = 1000;     // command repeated every second
+const uint32_t CLAMP_LINK_LOST_MS = 3500;
+enum ClampMode : uint8_t { CLAMP_AUTO, CLAMP_FORCE_OPEN, CLAMP_FORCE_CLOSED };
+volatile uint8_t clampMode = CLAMP_AUTO;  // serial "clamp auto|on|off"
+bool clampWantClosed = false, clampLinkOk = false;
+int clampAngle = -1;
+
 // ================= Audio =================
 #define SAMPLE_RATE 16000
 #define BEEP_AMPLITUDE 1800
@@ -235,7 +247,20 @@ void setupSpeaker() {
   i2s_set_pin(I2S_NUM_0, &pins);
 }
 
+// Serial "mute on|off" silences the buzzer (saved in NVS). Screen, website
+// and hotspot alarms are unaffected.
+bool buzzerMuted = false;
+
+void setMuted(bool on) {
+  buzzerMuted = on;
+  Preferences p;
+  p.begin("dtcfg", false);
+  p.putBool("mute", on);
+  p.end();
+}
+
 void playTone(int freqHz, int durationMs) {
+  if (buzzerMuted) return;
   int total = (SAMPLE_RATE * durationMs) / 1000;
   int16_t buf[256 * 2];
   float phase = 0;
@@ -853,6 +878,7 @@ int buildLiveJson(char *body, size_t cap) {
   if (s.maxConnected && s.hrValid) len += snprintf(body + len, cap - len, ",\"heartRate\":%d", s.hr);
   if (s.maxConnected && s.spo2Valid) len += snprintf(body + len, cap - len, ",\"spo2\":%d", s.spo2);
   if (s.maxConnected) len += appendMlJson(body + len, cap - len, s.ml);
+  len += snprintf(body + len, cap - len, ",\"clamp\":\"%s\"", clampState());
   len += snprintf(body + len, cap - len, "}");
   return len;
 }
@@ -1127,9 +1153,11 @@ void updateDisplayAndAlarms() {
   else if (vitalsNow) drawBanner("VITALS ALERT", ST77XX_RED);
   else if (s.maxConnected && s.ml.rhythm == RHYTHM_IRREGULAR) drawBanner("IRREGULAR HEARTBEAT", ST77XX_ORANGE);
   else if (s.maxConnected && s.ml.hrOutOfRange) drawBanner("HR OUTSIDE PATIENT RANGE", ST77XX_ORANGE);
+  else if (clampLinkOk && clampWantClosed) drawBanner("LINE CLAMPED", ST77XX_ORANGE);
   else if (s.percent < 10) drawBanner("LOW VOLUME", ST77XX_ORANGE);
   else if (!s.maxConnected) drawBanner("PULSE-OX OFFLINE", ST77XX_ORANGE);
   else if (!s.wifi) drawBanner("NO WIFI - AP 192.168.4.1", ST77XX_ORANGE);
+  else if (!clampLinkOk) drawBanner("CLAMP NOT CONNECTED", ST77XX_ORANGE);
   else drawBanner("STATUS: OK", ST77XX_GREEN);
 }
 
@@ -1183,7 +1211,15 @@ void setup() {
   showBootStatus("DripTrace", "Starting up...");
 
   Wire.begin(I2C_SDA, I2C_SCL);
+  Serial1.begin(115200, SERIAL_8N1, CLAMP_RX, CLAMP_TX);
   setupSpeaker();
+  {
+    Preferences p;
+    p.begin("dtcfg", true);
+    buzzerMuted = p.getBool("mute", false);
+    p.end();
+    if (buzzerMuted) Serial.println("Buzzer muted (serial 'mute off' to restore).");
+  }
   setupLoadCell();
   showBootStatus("Storage", "Mounting offline log...");
   logbook.begin();
@@ -1204,6 +1240,36 @@ void setup() {
   Serial.println("DripTrace v3 up.");
 }
 
+// Auto rule: squeeze the line when the bottle on the hook is empty, so the
+// line cannot run dry and blood cannot flow back; release when a fuller
+// bottle is hung. Talks to the clamp node every second.
+void serviceClamp() {
+  static uint32_t lastSend = 0, lastAck = 0;
+  static String rx;
+  while (Serial1.available()) {
+    char c = Serial1.read();
+    if (c != '\n') { if (rx.length() < 16) rx += c; continue; }
+    rx.trim();
+    if (rx.startsWith("A,")) { clampAngle = rx.substring(2).toInt(); lastAck = millis(); }
+    rx = "";
+  }
+  clampLinkOk = lastAck && millis() - lastAck < CLAMP_LINK_LOST_MS;
+  if (millis() - lastSend < CLAMP_SEND_MS) return;
+  lastSend = millis();
+  State s;
+  LOCK();
+  s = g;
+  UNLOCK();
+  bool emptyOnHook = s.hxConnected && s.tared && s.bottlePresent && s.bottleEmpty;
+  clampWantClosed = clampMode == CLAMP_FORCE_CLOSED || (clampMode == CLAMP_AUTO && emptyOnHook);
+  Serial1.print(clampWantClosed ? "C\n" : "O\n");
+}
+
+const char *clampState() {
+  if (!clampLinkOk) return "offline";
+  return clampWantClosed ? "closed" : "open";
+}
+
 // Serial commands: "sim regular|irregular|unresponsive|off", "baseline reset".
 void serviceSerial() {
   static String line;
@@ -1219,6 +1285,11 @@ void serviceSerial() {
     else if (line == "sim unresponsive") simMode = SIM_UNRESPONSIVE;
     else if (line == "sim off") simMode = SIM_OFF;
     else if (line == "baseline reset") baselineResetRequested = true;
+    else if (line == "mute on") setMuted(true);
+    else if (line == "mute off") setMuted(false);
+    else if (line == "clamp on") clampMode = CLAMP_FORCE_CLOSED;
+    else if (line == "clamp off") clampMode = CLAMP_FORCE_OPEN;
+    else if (line == "clamp auto") clampMode = CLAMP_AUTO;
     else if (line == "raw on") rawStream = true;
     else if (line == "raw off") rawStream = false;
     if (line.length()) Serial.printf("cmd '%s' -> sim=%u\n", line.c_str(), simMode);
@@ -1230,6 +1301,7 @@ void loop() {
   serviceLoadCell();
   updateDisplayAndAlarms();
   serviceSerial();
+  serviceClamp();
   logSecond();
 
   static uint32_t lastStat = 0;
@@ -1239,11 +1311,11 @@ void loop() {
     LOCK();
     s = g;
     UNLOCK();
-    Serial.printf("STAT hx=%d tared=%d bottle=%d gross=%.1fg fluid=%.1fmL pct=%.0f empty=%d flow=%.1f | max=%d finger=%d sig=%s hr=%d(%d) spo2=%d(%d) | beats=%lu rr=%u rhythm=%s p=%.2f base=%u%% %d-%d oor=%d unresp=%d | wifi=%d time=%d http=%d\n",
+    Serial.printf("STAT hx=%d tared=%d bottle=%d gross=%.1fg fluid=%.1fmL pct=%.0f empty=%d flow=%.1f | max=%d finger=%d sig=%s hr=%d(%d) spo2=%d(%d) | beats=%lu rr=%u rhythm=%s p=%.2f base=%u%% %d-%d oor=%d unresp=%d | clamp=%s %d | wifi=%d time=%d http=%d\n",
                   s.hxConnected, s.tared, s.bottlePresent, s.grossG, s.fluidMl, s.percent, s.bottleEmpty,
                   s.flowMlPerHr, s.maxConnected, s.finger, signalName(s.signal), s.hr, s.hrValid, s.spo2, s.spo2Valid,
                   (unsigned long)beatDetections, brain.rr.n, rhythmName(s.ml.rhythm), s.ml.irregularProb, s.ml.baselinePct, s.ml.hrLow, s.ml.hrHigh,
-                  s.ml.hrOutOfRange, s.ml.unresponsive, s.wifi,
+                  s.ml.hrOutOfRange, s.ml.unresponsive, clampState(), clampAngle, s.wifi,
                   s.timeSynced, s.lastHttp);
   }
   delay(5);
