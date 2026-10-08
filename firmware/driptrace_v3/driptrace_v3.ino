@@ -103,11 +103,13 @@ const uint32_t PUSH_INTERVAL_MS = 300;
 
 // ================= Load cell (measured 2026-10-08) =================
 const float HX_COUNTS_PER_GRAM = -255.85f;   // (full - empty bottle) / 100.5 g
-const float EMPTY_BOTTLE_G = 16.0f;          // empty 100 mL bottle on the hook
+// Two-point calibration, stored in NVS "dtcfg" (serial "cal empty" / "cal full"):
+// empty = empty bottle + empty tube (0 %), full = full bottle + tube (100 %).
+float calEmptyG = 16.0f;                     // default: empty 100 mL bottle, no tube
+float calFullG = 116.5f;                     // default: full 100 mL bottle, no tube
 const float FLUID_DENSITY_G_PER_ML = 1.005f; // saline
-const float BOTTLE_VOLUME_ML = 100.0f;
-const float NO_BOTTLE_BELOW_G = 10.0f;      // empty hook drifted to 7.2 g (2026-10-09); empty bottle ~16 g        // empty hook drifted to 3.4 g, empty bottle down to 7.3 g
-const float EMPTY_AT_ML = 5.0f;              // 5% of the bottle = empty
+const float NO_BOTTLE_BELOW_G = 10.0f;      // empty hook drifted to 7.2 g (2026-10-09); empty bottle ~16 g
+const float EMPTY_AT_PCT = 5.0f;             // at or below 5 % of the calibrated volume = empty
 const float BOTTLE_SWAP_JUMP_G = 15.0f;      // weight jumping up this much = new bottle
 
 const uint32_t HX_NOT_READY_LIMIT_MS = 600;  // normal gap is ~93 ms at 10.9 sps
@@ -185,6 +187,7 @@ struct State {
   bool bottlePresent;
   float grossG;          // bottle + fluid on the hook
   float fluidMl;
+  float capacityMl;
   float percent;
   bool bottleEmpty;
   float flowMlPerHr;
@@ -476,10 +479,12 @@ void serviceLoadCell() {
   if (medCount < 3) return;
 
   float gross = (medianRaw() - hxOffset) / HX_COUNTS_PER_GRAM;
-  bool present = gross >= NO_BOTTLE_BELOW_G;
-  float fluidG = gross - EMPTY_BOTTLE_G;
+  // A calibrated empty bottle + tube must still count as hung.
+  bool present = gross >= max(NO_BOTTLE_BELOW_G, 0.5f * calEmptyG);
+  float fluidG = gross - calEmptyG;
   float fluidMl = max(0.0f, fluidG / FLUID_DENSITY_G_PER_ML);
-  float pct = constrain(fluidMl / BOTTLE_VOLUME_ML * 100.0f, 0.0f, 100.0f);
+  float capacityMl = max(1.0f, (calFullG - calEmptyG) / FLUID_DENSITY_G_PER_ML);
+  float pct = constrain(fluidMl / capacityMl * 100.0f, 0.0f, 100.0f);
 
   // One flow point per second.
   float flow;
@@ -506,7 +511,8 @@ void serviceLoadCell() {
   g.bottlePresent = present;
   g.fluidMl = present ? fluidMl : 0;
   g.percent = present ? pct : 0;
-  g.bottleEmpty = !present || fluidMl <= EMPTY_AT_ML;
+  g.capacityMl = capacityMl;
+  g.bottleEmpty = !present || pct <= EMPTY_AT_PCT;
   g.flowMlPerHr = flow;
   UNLOCK();
 }
@@ -913,6 +919,7 @@ int buildLiveJson(char *body, size_t cap) {
                   s.finger ? "true" : "false", signalName(s.maxConnected ? s.signal : SIG_OFFLINE));
   if (s.maxConnected && s.hrValid) len += snprintf(body + len, cap - len, ",\"heartRate\":%d", s.hr);
   if (s.maxConnected && s.spo2Valid) len += snprintf(body + len, cap - len, ",\"spo2\":%d", s.spo2);
+  len += snprintf(body + len, cap - len, ",\"fluidMl\":%.1f,\"capacityMl\":%.1f", s.fluidMl, s.capacityMl);
   if (s.maxConnected) len += appendMlJson(body + len, cap - len, s.ml);
   len += snprintf(body + len, cap - len, ",\"clamp\":\"%s\"", clampState());
   len += snprintf(body + len, cap - len, "}");
@@ -1252,6 +1259,9 @@ void setup() {
     Preferences p;
     p.begin("dtcfg", true);
     buzzerMuted = p.getBool("mute", false);
+    calEmptyG = p.getFloat("emptyG", calEmptyG);
+    calFullG = p.getFloat("fullG", calFullG);
+    Serial.printf("Calibration: empty %.1f g, full %.1f g\n", calEmptyG, calFullG);
     p.end();
     if (buzzerMuted) Serial.println("Buzzer muted (serial 'mute off' to restore).");
   }
@@ -1332,6 +1342,34 @@ const char *clampState() {
   return clampWantClosed ? "closed" : "open";
 }
 
+// Averages the gross weight for 3 s and stores it as the empty or full point.
+void calibrate(bool empty) {
+  float sum = 0;
+  int n = 0;
+  uint32_t t0 = millis();
+  while (millis() - t0 < 3000) {
+    serviceLoadCell();
+    LOCK();
+    float gross = g.grossG;
+    UNLOCK();
+    sum += gross;
+    n++;
+    delay(100);
+  }
+  float avg = sum / n;
+  if (!empty && avg < calEmptyG + 20.0f) {
+    Serial.printf("CAL full rejected: %.1f g is not 20 g above empty (%.1f g)\n", avg, calEmptyG);
+    return;
+  }
+  (empty ? calEmptyG : calFullG) = avg;
+  Preferences p;
+  p.begin("dtcfg", false);
+  p.putFloat(empty ? "emptyG" : "fullG", avg);
+  p.end();
+  Serial.printf("CAL %s = %.1f g (empty %.1f g, full %.1f g, capacity %.1f mL)\n", empty ? "empty" : "full", avg,
+                calEmptyG, calFullG, (calFullG - calEmptyG) / FLUID_DENSITY_G_PER_ML);
+}
+
 // Serial commands: "sim regular|irregular|unresponsive|off", "baseline reset".
 void serviceSerial() {
   static String line;
@@ -1347,6 +1385,10 @@ void serviceSerial() {
     else if (line == "sim unresponsive") simMode = SIM_UNRESPONSIVE;
     else if (line == "sim off") simMode = SIM_OFF;
     else if (line == "baseline reset") baselineResetRequested = true;
+    else if (line == "cal empty") calibrate(true);
+    else if (line == "cal full") calibrate(false);
+    else if (line == "cal show") Serial.printf("CAL empty=%.1f g full=%.1f g capacity=%.1f mL\n", calEmptyG, calFullG,
+                                                (calFullG - calEmptyG) / FLUID_DENSITY_G_PER_ML);
     else if (line == "mute on") setMuted(true);
     else if (line == "mute off") setMuted(false);
     else if (line == "clamp on") clampMode = CLAMP_FORCE_CLOSED;

@@ -480,9 +480,8 @@ export default function Admin() {
             aria-selected={tab === t.id}
             aria-controls={`panel-${t.id}`}
             onClick={() => setParams(t.id === 'config' ? {} : { tab: t.id }, { replace: true })}
-            className={`rounded-pill px-4 py-1.5 text-[13px] font-medium transition-colors ${
-              tab === t.id ? 'bg-accent text-accent-on' : 'text-ink-muted hover:text-ink'
-            }`}
+            className={`rounded-pill px-4 py-1.5 text-[13px] font-medium transition-colors ${tab === t.id ? 'bg-accent text-accent-on' : 'text-ink-muted hover:text-ink'
+              }`}
           >
             {t.label}
           </button>

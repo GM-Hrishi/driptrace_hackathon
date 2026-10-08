@@ -57,6 +57,9 @@ export function normalizeReading(raw, id, now = Date.now()) {
     // Only an explicit false marks the unit offline; staleness covers the rest.
     sensorOnline: raw.sensorOnline !== false,
     backlog: num(raw.backlog, 0, 10_000_000),
+    // Unit-side calibration (empty bottle + tube = 0, full = 100 %).
+    fluidMl: num(raw.fluidMl, 0, 5000),
+    capacityMl: num(raw.capacityMl, 1, 5000),
     lastUpdated,
   }
 }

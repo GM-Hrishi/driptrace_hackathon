@@ -200,7 +200,13 @@ function BedDetailBody({ bed, now, settings, onRemove }) {
   const sevFor = (...kinds) => (offline ? undefined : bed.alerts.find((a) => kinds.includes(a.kind))?.severity)
 
   const pct = reading?.bottlePercentRemaining
-  const remainingMl = Number.isFinite(pct) ? (pct / 100) * bed.volumeMl : NaN
+  // The unit's own calibration wins over the registered bottle size.
+  const capacityMl = reading?.capacityMl ?? bed.volumeMl
+  const remainingMl = Number.isFinite(reading?.fluidMl)
+    ? reading.fluidMl
+    : Number.isFinite(pct)
+      ? (pct / 100) * bed.volumeMl
+      : NaN
   const flow = reading?.flowRateMlPerHr
   const ratio = Number.isFinite(flow) ? flow / bed.prescribedFlowMlPerHr : NaN
   const toEmpty = flow > 1 ? (remainingMl / flow) * 3_600_000 : NaN
@@ -272,7 +278,7 @@ function BedDetailBody({ bed, now, settings, onRemove }) {
             <span className="ml-1 text-base font-normal text-ink-muted">%</span>
           </p>
           <p className="dt-nums mt-2 text-[13px] text-ink-muted">
-            {Number.isFinite(remainingMl) ? `${Math.round(remainingMl)} of ${bed.volumeMl} mL` : '—'}
+            {Number.isFinite(remainingMl) ? `${Math.round(remainingMl)} of ${Math.round(capacityMl)} mL` : '—'}
           </p>
           <p className="dt-nums mt-1 text-[12px] text-ink-subtle">
             {offline ? 'Stale reading' : Number.isFinite(toEmpty) ? `Empty in ~${formatDuration(toEmpty)} at this rate` : 'Not flowing'}
@@ -300,7 +306,7 @@ function BedDetailBody({ bed, now, settings, onRemove }) {
               sub={`Alarm below ${bed.lowVolumePct ?? settings.lowVolumePct}%`}
             />
             <Kpi label="Drops / min" value={reading?.dropsPerMin} unit="gtt" stale={offline} sub="20 gtt/mL set" />
-            <Kpi label="Weight" value={reading?.weightGrams} unit="g" format={ONE} stale={offline} sub="Bottle + set, HX711" />
+            <Kpi label="Weight" value={reading?.weightGrams} unit="g" format={ONE} stale={offline} sub="Bottle + tube, HX711" />
             {vitals.map((vital) => (
               <Kpi
                 key={vital.key}
