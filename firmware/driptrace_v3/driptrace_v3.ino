@@ -70,6 +70,7 @@
 #include <Adafruit_ST7735.h>
 #include <driver/i2s.h>
 #include <WiFi.h>
+#include <esp_now.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <time.h>
@@ -157,16 +158,18 @@ const char *signalName(uint8_t s) {
 }
 
 // ================= Backflow clamp (separate ESP32 + SG90) =================
-// UART1: S3 GPIO17 (TX) -> clamp node GPIO16 (RX); node GPIO4 (TX) -> S3 GPIO18 (RX); GND shared.
-// The S3 decides; the node (firmware/clamp_node) only moves the servo.
-#define CLAMP_TX 17
-#define CLAMP_RX 18
+// Wireless ESP-NOW link to firmware/clamp_node: the S3 broadcasts the wanted
+// state every second on its current WiFi channel; the node finds that channel
+// and answers with its angle. The S3 decides; the node only moves the servo.
 const uint32_t CLAMP_SEND_MS = 1000;     // command repeated every second
 const uint32_t CLAMP_LINK_LOST_MS = 3500;
 enum ClampMode : uint8_t { CLAMP_AUTO, CLAMP_FORCE_OPEN, CLAMP_FORCE_CLOSED };
 volatile uint8_t clampMode = CLAMP_AUTO;  // serial "clamp auto|on|off"
 bool clampWantClosed = false, clampLinkOk = false;
-int clampAngle = -1;
+volatile int clampAngle = -1;
+volatile uint32_t clampAckMs = 0;
+struct __attribute__((packed)) ClampMsg { char magic[4]; char bed[12]; uint8_t value; uint32_t seq; };
+const uint8_t BROADCAST_MAC[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 
 // ================= Audio =================
 #define SAMPLE_RATE 16000
@@ -1211,7 +1214,6 @@ void setup() {
   showBootStatus("DripTrace", "Starting up...");
 
   Wire.begin(I2C_SDA, I2C_SCL);
-  Serial1.begin(115200, SERIAL_8N1, CLAMP_RX, CLAMP_TX);
   setupSpeaker();
   {
     Preferences p;
@@ -1233,6 +1235,7 @@ void setup() {
                   brain.out.hrLow, brain.out.hrHigh);
   }
 
+  setupClampLink();  // after WiFi is up, so ESP-NOW shares its channel
   setupDisplayLayout();
   xTaskCreatePinnedToCore(vitalsTask, "vitals", 8192, NULL, 1, NULL, 0);
   xTaskCreatePinnedToCore(netTask, "net", 12288, NULL, 1, NULL, 1);
@@ -1243,17 +1246,31 @@ void setup() {
 // Auto rule: squeeze the line when the bottle on the hook is empty, so the
 // line cannot run dry and blood cannot flow back; release when a fuller
 // bottle is hung. Talks to the clamp node every second.
-void serviceClamp() {
-  static uint32_t lastSend = 0, lastAck = 0;
-  static String rx;
-  while (Serial1.available()) {
-    char c = Serial1.read();
-    if (c != '\n') { if (rx.length() < 16) rx += c; continue; }
-    rx.trim();
-    if (rx.startsWith("A,")) { clampAngle = rx.substring(2).toInt(); lastAck = millis(); }
-    rx = "";
+void onClampAck(const esp_now_recv_info_t *info, const uint8_t *data, int len) {
+  if (len != sizeof(ClampMsg)) return;
+  ClampMsg m;
+  memcpy(&m, data, sizeof(m));
+  if (memcmp(m.magic, "DTAK", 4) != 0 || strncmp(m.bed, BED_ID, sizeof(m.bed)) != 0) return;
+  clampAngle = m.value;
+  clampAckMs = millis();
+}
+
+void setupClampLink() {
+  if (esp_now_init() != ESP_OK) {
+    Serial.println("ESP-NOW init failed: backflow clamp unavailable.");
+    return;
   }
-  clampLinkOk = lastAck && millis() - lastAck < CLAMP_LINK_LOST_MS;
+  esp_now_register_recv_cb(onClampAck);
+  esp_now_peer_info_t peer = {};
+  memcpy(peer.peer_addr, BROADCAST_MAC, 6);
+  peer.channel = 0;  // follow the current WiFi channel
+  peer.ifidx = WIFI_IF_STA;
+  esp_now_add_peer(&peer);
+}
+
+void serviceClamp() {
+  static uint32_t lastSend = 0, seq = 0;
+  clampLinkOk = clampAckMs && millis() - clampAckMs < CLAMP_LINK_LOST_MS;
   if (millis() - lastSend < CLAMP_SEND_MS) return;
   lastSend = millis();
   State s;
@@ -1262,7 +1279,12 @@ void serviceClamp() {
   UNLOCK();
   bool emptyOnHook = s.hxConnected && s.tared && s.bottlePresent && s.bottleEmpty;
   clampWantClosed = clampMode == CLAMP_FORCE_CLOSED || (clampMode == CLAMP_AUTO && emptyOnHook);
-  Serial1.print(clampWantClosed ? "C\n" : "O\n");
+  ClampMsg m = {};
+  memcpy(m.magic, "DTCL", 4);
+  strncpy(m.bed, BED_ID, sizeof(m.bed));
+  m.value = clampWantClosed ? 1 : 0;
+  m.seq = ++seq;
+  esp_now_send(BROADCAST_MAC, (uint8_t *)&m, sizeof(m));
 }
 
 const char *clampState() {
