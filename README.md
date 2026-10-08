@@ -50,3 +50,8 @@ offline) from Admin or its bed page.
 Bed registrations and settings are stored in the browser's localStorage.
 The Firebase rules deny all client writes by design, so nothing typed into
 the dashboard is written to the database.
+
+## License
+
+MIT, see [LICENSE](LICENSE). Free for any hospital, college or maker to use,
+change and share.
