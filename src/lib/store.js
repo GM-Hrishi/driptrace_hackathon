@@ -70,10 +70,31 @@ function demoBeds(now = Date.now()) {
   }))
 }
 
+/**
+ * The bench unit, so a fresh browser (a judge's phone) opens on live data
+ * instead of an empty ward.
+ * @returns {import('./types.js').BedConfig}
+ */
+function benchBed(now = Date.now()) {
+  return {
+    id: 'bench-bed-01',
+    patientId: 'Demo patient',
+    bedNumber: '01',
+    volumeMl: 100,
+    prescribedFlowMlPerHr: 60,
+    device: 'bed-01',
+    lowVolumePct: null,
+    clinician: '',
+    notes: '',
+    ivStartAt: now,
+    createdAt: now,
+  }
+}
+
 /** @returns {WardState} */
 function load() {
   const fresh = {
-    beds: DEFAULT_SETTINGS.simulationMode ? demoBeds() : [],
+    beds: [benchBed(), ...(DEFAULT_SETTINGS.simulationMode ? demoBeds() : [])],
     settings: { ...DEFAULT_SETTINGS },
     acks: {},
   }
