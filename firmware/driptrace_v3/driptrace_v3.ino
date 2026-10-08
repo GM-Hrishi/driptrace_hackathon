@@ -1,5 +1,5 @@
 /*
- * DripTrace — ESP32-S3-WROOM-1 N16R8 firmware v2
+ * DripTrace — ESP32-S3-WROOM-1 N16R8 firmware v3
  * KERNEL PRIME'26 — Team Soldering Boys
  *
  * Rewritten from measured facts (docs/hardware/DRIPTRACE_FACTS.md, 2026-10-08):
@@ -22,8 +22,11 @@
  *   - Flow rate = least-squares slope of fluid weight over the last 60 s.
  *
  *   PULSE OXIMETER (MAX30102, SparkFun 1.1.2)
- *   - Config (0x1F,4,2,100,411,4096) = 25 samples/s, which is exactly the rate
- *     the SpO2 algorithm assumes (FreqS = 25).
+ *   - Config (0x1F,4,3,400,411,4096) = 50 samples/s (closest to the watch).
+ *     Pairs are averaged to the 25 sps the SpO2 algorithm assumes (FreqS = 25).
+ *   - Finger-off is debounced (1 s); a shorter dip is a slip, not a removal.
+ *   - Motion (IR jump or DC shift) pauses beat timing and the SpO2 window;
+ *     the last good HR/SpO2 is held for up to 8 s and "signal" says why.
  *   - Every FIFO sample is processed exactly once. Beat intervals are counted
  *     in samples (immune to FIFO batching jitter); HR = median of the last 5
  *     accepted beats.
@@ -116,12 +119,33 @@ const uint32_t BOTTLE_SETTLE_MS = 30000;
 
 // ================= Pulse oximeter =================
 const uint32_t FINGER_THRESHOLD = 30000;     // no finger ~500, finger ~100000
-const float MAX_SPS = 25.0f;                 // (0x1F,4,2,100,411,4096): 100 sps / avg 4
+// (0x1F,4,3,400,411,4096): measured 50.1 sps, and the closest config to the
+// smartwatch on the bench (71 vs 67 bpm). Beat timing resolution 20 ms.
+const float MAX_SPS = 50.0f;
+const uint8_t SPO2_DECIMATE = 2;             // average pairs -> the 25 sps the SpO2 algorithm assumes
 const uint8_t MAX_PART_ID = 0x15;
 const uint8_t HR_KEEP = 5;
-const uint32_t HR_STALE_MS = 3000;
-const uint32_t SPO2_STALE_MS = 6000;
+const uint32_t HR_STALE_MS = 5000;           // no accepted beat this long -> HR not current
+const uint32_t VITALS_HOLD_MS = 8000;        // last good HR/SpO2 shown this long through motion or dropouts
+const uint16_t FINGER_ON_SAMPLES = 10;       // 0.2 s above threshold = finger placed
+const uint16_t FINGER_OFF_SAMPLES = 50;      // 1 s below threshold = finger removed (shorter = a slip)
+// Motion: the pulse moves IR by ~0.1% of DC per sample at 50 sps; a moving
+// finger jumps by percents. Thresholds from the bench wiggle test.
+const float MOTION_JUMP_FRAC = 0.015f;       // sample-to-sample jump vs DC
+const float MOTION_DRIFT_FRAC = 0.06f;       // fast DC vs ~2 s DC baseline
+const uint16_t MOTION_HOLD_SAMPLES = 75;     // stay in "motion" 1.5 s after it settles
 const int HR_LOW = 50, HR_HIGH = 120, SPO2_LOW = 92;
+
+enum Signal : uint8_t { SIG_OFFLINE, SIG_NO_FINGER, SIG_ACQUIRING, SIG_OK, SIG_MOTION };
+const char *signalName(uint8_t s) {
+  switch (s) {
+    case SIG_NO_FINGER: return "no-finger";
+    case SIG_ACQUIRING: return "acquiring";
+    case SIG_OK: return "ok";
+    case SIG_MOTION: return "motion";
+    default: return "offline";
+  }
+}
 
 // ================= Audio =================
 #define SAMPLE_RATE 16000
@@ -146,6 +170,9 @@ struct State {
   bool hrValid;
   int spo2;
   bool spo2Valid;
+  uint8_t signal;        // Signal
+  uint32_t lastMotionMs; // last finger movement (millis)
+  uint32_t fingerSinceMs;
   // network
   bool wifi;
   bool timeSynced;
@@ -441,12 +468,13 @@ void clearVitals() {
   g.finger = false;
   g.hrValid = false;
   g.spo2Valid = false;
+  g.signal = SIG_OFFLINE;
   UNLOCK();
 }
 
 bool maxStart() {
   if (!particleSensor.begin(Wire, I2C_SPEED_FAST)) return false;
-  particleSensor.setup(0x1F, 4, 2, 100, 411, 4096);
+  particleSensor.setup(0x1F, 4, 3, 400, 411, 4096);
   return true;
 }
 
@@ -458,9 +486,28 @@ void vitalsTask(void *) {
   uint8_t hrCount = 0, hrPos = 0;
   uint32_t lastAcceptedMs = 0, lastSpo2Ms = 0, lastAlgoHrMs = 0;
   uint16_t ringPos = 0, ringCount = 0, sinceSpo2 = 0;
-  bool fingerPrev = false, haveBeat = false;
+  bool haveBeat = false;
   uint8_t rejectRun = 0;
   int algoHr = 0;
+
+  // Finger presence is debounced: a dip under the threshold shorter than
+  // FINGER_OFF_SAMPLES is a slip (treated as motion), not a removal, so it
+  // no longer wipes the heart-rate history.
+  bool fingerOn = false;
+  uint16_t onRun = 0, offRun = 0;
+  uint32_t fingerSinceMs = 0;
+
+  // Motion detector state.
+  float dcFast = 0, dcSlow = 0;
+  uint32_t prevIr = 0, motionUntilIdx = 0, lastMotionMs = 0;
+
+  // SpO2 decimation (50 -> 25 sps).
+  uint32_t pairIr = 0, pairRed = 0;
+  uint8_t pairN = 0;
+
+  // Last good values, held through motion and short dropouts.
+  int heldHr = 0;
+  uint32_t heldHrMs = 0;
 
   auto medianOf = [&](uint8_t n) {
     int tmp[HR_KEEP];
@@ -477,6 +524,17 @@ void vitalsTask(void *) {
     hrCount = hrPos = 0;
     haveBeat = false;
     rejectRun = 0;
+  };
+  auto resetSpo2Window = [&]() {
+    ringCount = ringPos = sinceSpo2 = 0;
+    pairN = 0;
+    pairIr = pairRed = 0;
+  };
+  auto fingerRemoved = [&]() {
+    fingerOn = false;
+    resetHr();
+    resetSpo2Window();
+    lastAlgoHrMs = lastSpo2Ms = heldHrMs = 0;
   };
 
   for (;;) {
@@ -504,9 +562,8 @@ void vitalsTask(void *) {
       lastIdCheck = now;
       if (particleSensor.readPartID() != MAX_PART_ID) {
         connected = false;
-        fingerPrev = false;
-        resetHr();
-        ringCount = ringPos = sinceSpo2 = 0;
+        fingerRemoved();
+        onRun = offRun = 0;
         LOCK();
         g.maxConnected = false;
         UNLOCK();
@@ -521,24 +578,66 @@ void vitalsTask(void *) {
       uint32_t red = particleSensor.getFIFORed();
       particleSensor.nextSample();
       sampleIdx++;
-      bool finger = ir >= FINGER_THRESHOLD;
+      bool above = ir >= FINGER_THRESHOLD;
+      if (above) {
+        offRun = 0;
+        if (onRun < 0xFFFF) onRun++;
+      } else {
+        onRun = 0;
+        if (offRun < 0xFFFF) offRun++;
+      }
 
-      if (!finger) {
-        if (fingerPrev) {
-          resetHr();
-          ringCount = ringPos = sinceSpo2 = 0;
-          lastAlgoHrMs = 0;
-        }
-        fingerPrev = false;
+      if (!fingerOn) {
+        if (onRun < FINGER_ON_SAMPLES) continue;
+        // Finger placed: seed the DC trackers and let it settle like motion.
+        fingerOn = true;
+        fingerSinceMs = millis();
+        dcFast = dcSlow = ir;
+        prevIr = ir;
+        motionUntilIdx = sampleIdx + MOTION_HOLD_SAMPLES;
+        lastMotionMs = millis();
+        resetHr();
+        resetSpo2Window();
+      }
+      if (offRun >= FINGER_OFF_SAMPLES) {
+        fingerRemoved();
         continue;
       }
-      fingerPrev = true;
+
+      // Motion: a sudden IR jump, the fast DC leaving the slow baseline, or a
+      // brief slip under the finger threshold.
+      bool motionNow = !above;
+      if (above) {
+        float jump = fabsf((float)ir - (float)prevIr);
+        dcFast += ((float)ir - dcFast) / 8.0f;
+        if (jump > MOTION_JUMP_FRAC * dcSlow || fabsf(dcFast - dcSlow) > MOTION_DRIFT_FRAC * dcSlow) {
+          motionNow = true;
+        }
+        // The baseline follows faster while moving so it re-locks soon after.
+        dcSlow += ((float)ir - dcSlow) / (motionNow ? 10.0f : 100.0f);
+        prevIr = ir;
+      }
+      if (motionNow) {
+        motionUntilIdx = sampleIdx + MOTION_HOLD_SAMPLES;
+        lastMotionMs = millis();
+      }
+
+      // Fed every sample so the library's filters stay continuous.
+      bool beat = above && checkForBeat((int32_t)ir);
+
+      if ((int32_t)(motionUntilIdx - sampleIdx) > 0) {
+        // While moving: no beat intervals (one spanning the motion is
+        // meaningless) and no SpO2 window containing motion samples.
+        haveBeat = false;
+        resetSpo2Window();
+        continue;
+      }
 
       // Heart rate: beat interval counted in samples. The detector sometimes
       // fires twice per heartbeat (measured: +7..15 bpm over the watch), so
       // once 3 beats are known, an early detection is treated as a second
       // bump inside the same beat and ignored.
-      if (checkForBeat((int32_t)ir)) {
+      if (beat) {
         if (!haveBeat) {
           haveBeat = true;  // first beat only starts the clock
           lastBeatIdx = sampleIdx;
@@ -564,12 +663,17 @@ void vitalsTask(void *) {
         }
       }
 
-      // SpO2: rolling 4 s window of the same samples, evaluated every second.
-      irRing[ringPos] = ir;
-      redRing[ringPos] = red;
+      // SpO2: average sample pairs to 25 sps, rolling 4 s window, every second.
+      pairIr += ir;
+      pairRed += red;
+      if (++pairN < SPO2_DECIMATE) continue;
+      irRing[ringPos] = pairIr / SPO2_DECIMATE;
+      redRing[ringPos] = pairRed / SPO2_DECIMATE;
+      pairIr = pairRed = 0;
+      pairN = 0;
       ringPos = (ringPos + 1) % BUFFER_SIZE;
       if (ringCount < BUFFER_SIZE) ringCount++;
-      if (ringCount == BUFFER_SIZE && ++sinceSpo2 >= (uint16_t)MAX_SPS) {
+      if (ringCount == BUFFER_SIZE && ++sinceSpo2 >= (uint16_t)(MAX_SPS / SPO2_DECIMATE)) {
         sinceSpo2 = 0;
         for (uint16_t i = 0; i < BUFFER_SIZE; i++) {
           uint16_t k = (ringPos + i) % BUFFER_SIZE;
@@ -596,24 +700,39 @@ void vitalsTask(void *) {
 
     // Publish the vitals snapshot.
     now = millis();
+    bool moving = fingerOn && (int32_t)(motionUntilIdx - sampleIdx) > 0;
     int hr = 0;
-    bool hrOkNow = false;
+    bool hrFresh = false;
     if (hrCount >= 3 && now - lastAcceptedMs < HR_STALE_MS) {
       hr = medianOf(hrCount);
-      hrOkNow = true;
+      hrFresh = true;
     } else if (lastAlgoHrMs && now - lastAlgoHrMs < HR_STALE_MS) {
       hr = algoHr;
-      hrOkNow = true;
+      hrFresh = true;
     }
+    if (hrFresh) {
+      heldHr = hr;
+      heldHrMs = now;
+    }
+    // Hold the last good HR through motion and short dropouts instead of
+    // blanking it on the dashboard.
+    bool hrShown = fingerOn && heldHrMs && now - heldHrMs < VITALS_HOLD_MS;
+    bool spo2Shown = fingerOn && lastSpo2Ms && now - lastSpo2Ms < VITALS_HOLD_MS;
+
+    uint8_t signal = !fingerOn ? SIG_NO_FINGER : moving ? SIG_MOTION : hrFresh ? SIG_OK : SIG_ACQUIRING;
+
     LOCK();
     g.maxConnected = true;
-    g.finger = fingerPrev;
-    g.hr = hr;
-    g.hrValid = fingerPrev && hrOkNow;
-    g.spo2Valid = fingerPrev && lastSpo2Ms && now - lastSpo2Ms < SPO2_STALE_MS;
+    g.finger = fingerOn;
+    g.hr = hrShown ? heldHr : 0;
+    g.hrValid = hrShown;
+    g.spo2Valid = spo2Shown;
+    g.signal = signal;
+    g.lastMotionMs = lastMotionMs;
+    g.fingerSinceMs = fingerOn ? fingerSinceMs : 0;
     UNLOCK();
 
-    // FIFO holds 32 samples (1.3 s at 25 sps); 20 ms between checks is plenty.
+    // FIFO holds 32 samples (0.64 s at 50 sps); 20 ms between checks is plenty.
     vTaskDelay(pdMS_TO_TICKS(20));
   }
 }
@@ -668,13 +787,16 @@ void netTask(void *) {
     s = g;
     UNLOCK();
 
-    char body[320];
+    char body[640];
     int len = snprintf(body, sizeof(body),
       "{\"weightGrams\":%.1f,\"flowRateMlPerHr\":%.1f,\"bottlePercentRemaining\":%.1f,"
       "\"bottleEmpty\":%s,\"lastUpdated\":%llu,\"sensorOnline\":%s",
       constrain(s.grossG, 0.0f, 5000.0f), s.flowMlPerHr, s.percent,
       s.bottleEmpty ? "true" : "false", (unsigned long long)epochMs(),
       (s.hxConnected && s.tared) ? "true" : "false");
+    // Always say why HR/SpO2 may be missing, so the dashboard need not guess.
+    len += snprintf(body + len, sizeof(body) - len, ",\"finger\":%s,\"signal\":\"%s\"",
+                    s.finger ? "true" : "false", signalName(s.maxConnected ? s.signal : SIG_OFFLINE));
     if (s.maxConnected && s.hrValid) len += snprintf(body + len, sizeof(body) - len, ",\"heartRate\":%d", s.hr);
     if (s.maxConnected && s.spo2Valid) len += snprintf(body + len, sizeof(body) - len, ",\"spo2\":%d", s.spo2);
     len += snprintf(body + len, sizeof(body) - len, "}");
@@ -812,10 +934,13 @@ void updateDisplayAndAlarms() {
     drawRow(2, ROW_HR_Y, "Place finger", ST77XX_YELLOW);
     drawRow(3, ROW_SPO2_Y, "Place finger", ST77XX_YELLOW);
   } else {
-    drawRow(2, ROW_HR_Y, s.hrValid ? String(s.hr) + " bpm" : String("reading..."),
-            s.hrValid ? (hrBad ? ST77XX_RED : ST77XX_GREEN) : ST77XX_YELLOW);
-    drawRow(3, ROW_SPO2_Y, s.spo2Valid ? String(s.spo2) + " %" : String("reading..."),
-            s.spo2Valid ? (spo2Bad ? ST77XX_RED : ST77XX_GREEN) : ST77XX_YELLOW);
+    // While the finger moves, held values are shown in yellow.
+    bool moving = s.signal == SIG_MOTION;
+    const char *waiting = moving ? "Hold still" : "reading...";
+    drawRow(2, ROW_HR_Y, s.hrValid ? String(s.hr) + " bpm" : String(waiting),
+            s.hrValid ? (hrBad ? ST77XX_RED : moving ? ST77XX_YELLOW : ST77XX_GREEN) : ST77XX_YELLOW);
+    drawRow(3, ROW_SPO2_Y, s.spo2Valid ? String(s.spo2) + " %" : String(waiting),
+            s.spo2Valid ? (spo2Bad ? ST77XX_RED : moving ? ST77XX_YELLOW : ST77XX_GREEN) : ST77XX_YELLOW);
   }
 
   // Alarms: empty bottle repeats while it lasts; vitals beeps once per episode.
@@ -872,7 +997,7 @@ void setupWiFiAndTime() {
 void setup() {
   Serial.begin(115200);
   delay(300);
-  Serial.println("\nDripTrace firmware v2 starting");
+  Serial.println("\nDripTrace firmware v3 starting");
   if (strcmp(DATABASE_SECRET, "PASTE_DATABASE_SECRET_HERE") == 0) {
     Serial.println("WARNING: DATABASE_SECRET not set - every push will fail with 401.");
   }
@@ -892,7 +1017,7 @@ void setup() {
   setupDisplayLayout();
   xTaskCreatePinnedToCore(vitalsTask, "vitals", 8192, NULL, 1, NULL, 0);
   xTaskCreatePinnedToCore(netTask, "net", 8192, NULL, 1, NULL, 1);
-  Serial.println("DripTrace v2 up.");
+  Serial.println("DripTrace v3 up.");
 }
 
 void loop() {
@@ -906,9 +1031,9 @@ void loop() {
     LOCK();
     s = g;
     UNLOCK();
-    Serial.printf("STAT hx=%d tared=%d bottle=%d gross=%.1fg fluid=%.1fmL pct=%.0f empty=%d flow=%.1f | max=%d finger=%d hr=%d(%d) spo2=%d(%d) | wifi=%d time=%d http=%d\n",
+    Serial.printf("STAT hx=%d tared=%d bottle=%d gross=%.1fg fluid=%.1fmL pct=%.0f empty=%d flow=%.1f | max=%d finger=%d sig=%s hr=%d(%d) spo2=%d(%d) | wifi=%d time=%d http=%d\n",
                   s.hxConnected, s.tared, s.bottlePresent, s.grossG, s.fluidMl, s.percent, s.bottleEmpty,
-                  s.flowMlPerHr, s.maxConnected, s.finger, s.hr, s.hrValid, s.spo2, s.spo2Valid, s.wifi,
+                  s.flowMlPerHr, s.maxConnected, s.finger, signalName(s.signal), s.hr, s.hrValid, s.spo2, s.spo2Valid, s.wifi,
                   s.timeSynced, s.lastHttp);
   }
   delay(5);
