@@ -106,7 +106,7 @@ const float HX_COUNTS_PER_GRAM = -255.85f;   // (full - empty bottle) / 100.5 g
 const float EMPTY_BOTTLE_G = 16.0f;          // empty 100 mL bottle on the hook
 const float FLUID_DENSITY_G_PER_ML = 1.005f; // saline
 const float BOTTLE_VOLUME_ML = 100.0f;
-const float NO_BOTTLE_BELOW_G = 5.5f;        // empty hook drifted to 3.4 g, empty bottle down to 7.3 g
+const float NO_BOTTLE_BELOW_G = 10.0f;      // empty hook drifted to 7.2 g (2026-10-09); empty bottle ~16 g        // empty hook drifted to 3.4 g, empty bottle down to 7.3 g
 const float EMPTY_AT_ML = 5.0f;              // 5% of the bottle = empty
 const float BOTTLE_SWAP_JUMP_G = 15.0f;      // weight jumping up this much = new bottle
 
@@ -1277,8 +1277,15 @@ void serviceClamp() {
   LOCK();
   s = g;
   UNLOCK();
-  bool emptyOnHook = s.hxConnected && s.tared && s.bottlePresent && s.bottleEmpty;
-  clampWantClosed = clampMode == CLAMP_FORCE_CLOSED || (clampMode == CLAMP_AUTO && emptyOnHook);
+  // Armed only once a bottle with real fluid hung here; it then clamps when
+  // that bottle runs dry. Drift, boot and an empty hook can never clamp.
+  // Taking the bottle off disarms it (and opens the line).
+  static bool armed = false;
+  bool hxOk = s.hxConnected && s.tared;
+  if (hxOk && s.bottlePresent && s.fluidMl > 20.0f) armed = true;
+  if (hxOk && !s.bottlePresent) armed = false;
+  bool ranDry = armed && hxOk && s.bottlePresent && s.bottleEmpty;
+  clampWantClosed = clampMode == CLAMP_FORCE_CLOSED || (clampMode == CLAMP_AUTO && ranDry);
   ClampMsg m = {};
   memcpy(m.magic, "DTCL", 4);
   strncpy(m.bed, BED_ID, sizeof(m.bed));
