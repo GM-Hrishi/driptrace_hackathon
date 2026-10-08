@@ -1,7 +1,7 @@
 import NumberFlow from '@number-flow/react'
 import { Link } from 'react-router'
 
-import { getEnabledVitals } from '../config/vitals.js'
+import { getEnabledVitals, vitalPlaceholder } from '../config/vitals.js'
 import { alarmClass } from '../lib/severity.js'
 import { useWardStore } from '../lib/store.js'
 import IVBottle from './IVBottle.jsx'
@@ -123,8 +123,9 @@ export default function BedCard({ bed, now, linked = true }) {
                 return (
                   <span key={vital.key}>
                     <span className="text-ink-subtle">{vital.label}</span>{' '}
-                    {value ?? '—'}
-                    {vital.unit === '%' ? '%' : ` ${vital.unit}`}
+                    {value !== null
+                      ? `${value}${vital.unit === '%' ? '%' : ` ${vital.unit}`}`
+                      : vitalPlaceholder(reading, 'short')}
                   </span>
                 )
               })}

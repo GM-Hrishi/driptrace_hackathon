@@ -11,6 +11,8 @@ import {
   YAxis,
 } from 'recharts'
 
+import { chartPoints } from '../lib/flowHistory.js'
+
 /**
  * Flow rate over time against the prescribed rate.
  *
@@ -35,7 +37,9 @@ function clock(t) {
 
 function ChartTooltip({ active, payload, prescribed }) {
   if (!active || !payload?.length) return null
-  const { t, flow } = payload[0].payload
+  const { t, flow: live, flowApprox } = payload[0].payload
+  const flow = live ?? flowApprox
+  if (!Number.isFinite(flow)) return null
   return (
     <div className="rounded-control border border-line-strong bg-surface px-3 py-2 text-[12px] shadow-[var(--dt-shadow-card)]">
       <p className="dt-nums text-ink-subtle">{clock(t)}</p>
@@ -43,6 +47,9 @@ function ChartTooltip({ active, payload, prescribed }) {
         <span className="text-[14px] font-semibold">{flow.toFixed(1)}</span> mL/hr
       </p>
       <p className="dt-nums text-ink-muted">{(flow / prescribed).toFixed(2)}x prescribed</p>
+      {flowApprox !== undefined && flowApprox !== null && (
+        <p className="text-ink-subtle">Logged offline, time estimated</p>
+      )}
     </div>
   )
 }
@@ -58,11 +65,19 @@ export default function FlowTrendChart({ history, prescribed, deviationPct }) {
   const [animate, setAnimate] = useState(true)
 
   // A reading with no usable flow value is skipped, not plotted as NaN.
-  const data = history
-    .filter((s) => Number.isFinite(s.t) && Number.isFinite(s.flowRateMlPerHr))
-    .map((s) => ({ t: s.t, flow: s.flowRateMlPerHr }))
+  // Outages become line breaks; seconds logged on a boot that never synced its
+  // clock (time estimated) are drawn dashed.
+  const samples = history.filter((s) => Number.isFinite(s.t) && Number.isFinite(s.flowRateMlPerHr))
+  const data = chartPoints(samples).map((s) =>
+    s.gap
+      ? { t: s.t, flow: null, flowApprox: null }
+      : s.approxTime
+        ? { t: s.t, flow: null, flowApprox: s.flowRateMlPerHr }
+        : { t: s.t, flow: s.flowRateMlPerHr, flowApprox: null },
+  )
+  const values = samples.map((s) => ({ t: s.t, flow: s.flowRateMlPerHr }))
 
-  if (data.length < 2) {
+  if (values.length < 2) {
     return (
       <div
         className="rounded-control flex items-center justify-center border border-dashed border-line text-[13px] text-ink-subtle"
@@ -74,10 +89,10 @@ export default function FlowTrendChart({ history, prescribed, deviationPct }) {
   }
 
   const band = (prescribed * deviationPct) / 100
-  const peak = Math.max(...data.map((d) => d.flow))
+  const peak = values.reduce((m, d) => Math.max(m, d.flow), 0)
   const yMax = Math.ceil(Math.max(peak * 1.1, (prescribed + band) * 1.15, 10) / 10) * 10
-  const latest = data[data.length - 1]
-  const minutes = Math.max(1, Math.round((latest.t - data[0].t) / 60_000))
+  const latest = values[values.length - 1]
+  const minutes = Math.max(1, Math.round((latest.t - values[0].t) / 60_000))
 
   return (
     <figure>
@@ -144,6 +159,17 @@ export default function FlowTrendChart({ history, prescribed, deviationPct }) {
               isAnimationActive={animate}
               animationDuration={700}
               onAnimationEnd={() => setAnimate(false)}
+              connectNulls={false}
+            />
+            <Line
+              dataKey="flowApprox"
+              type="monotone"
+              stroke="var(--dt-accent)"
+              strokeWidth={2}
+              strokeDasharray="4 4"
+              dot={false}
+              isAnimationActive={false}
+              connectNulls={false}
             />
           </LineChart>
         </ResponsiveContainer>
@@ -161,7 +187,7 @@ export default function FlowTrendChart({ history, prescribed, deviationPct }) {
               </tr>
             </thead>
             <tbody>
-              {data
+              {values
                 .slice(-20)
                 .reverse()
                 .map((row) => (

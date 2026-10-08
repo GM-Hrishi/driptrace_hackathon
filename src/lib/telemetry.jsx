@@ -1,10 +1,10 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import { onValue, ref } from 'firebase/database'
+import { onValue, orderByKey, query, ref, startAt } from 'firebase/database'
 
-import { BEDS_PATH, ensureSignedIn, isFirebaseConfigured, rtdb } from './firebase.js'
-import { applyFlowStoppedGrace, mergeReadings } from './flowHistory.js'
+import { BEDS_PATH, HISTORY_PATH, ensureSignedIn, isFirebaseConfigured, rtdb } from './firebase.js'
+import { HISTORY_WINDOW_MS, applyFlowStoppedGrace, mergeLoggedHistory, mergeReadings } from './flowHistory.js'
 import { createSimulator } from './mockBeds.js'
-import { normalizeReading } from './reading.js'
+import { normalizeHistorySample, normalizeReading } from './reading.js'
 import { deriveAlerts, highestActiveAlert, resolveChannel, sortCriticalFirst } from './severity.js'
 import { useWardStore } from './store.js'
 import { SIMULATED_DEVICE } from './validateBed.js'
@@ -151,6 +151,57 @@ export function TelemetryProvider({ children }) {
     }
     if (Object.keys(byBedId).length > 0) ingest(byBedId)
   }, [devices, configs, ingest])
+
+  // Each hardware unit's logged seconds (history/<device>), including any it
+  // backfilled after a WiFi outage, so the trend survives a reload and fills
+  // offline gaps at the times they were measured.
+  const hardwareDevices = useMemo(
+    () =>
+      [...new Set(configs.filter((bed) => bed.device !== SIMULATED_DEVICE).map((bed) => bed.device))]
+        .sort()
+        .join('|'),
+    [configs],
+  )
+  const [logged, setLogged] = useState(/** @type {Record<string, import('./types.js').FlowSample[]>} */ ({}))
+  useEffect(() => {
+    if (!isFirebaseConfigured || !rtdb || !hardwareDevices) return undefined
+    let cancelled = false
+    const unsubscribers = []
+    ensureSignedIn().then((result) => {
+      if (cancelled || !result.ok) return
+      // Keys are the epoch ms the unit measured each second at.
+      const since = String(Date.now() - HISTORY_WINDOW_MS)
+      for (const device of hardwareDevices.split('|')) {
+        const recent = query(ref(rtdb, `${HISTORY_PATH}/${device}`), orderByKey(), startAt(since))
+        unsubscribers.push(
+          onValue(
+            recent,
+            (snap) => {
+              const samples = Object.values(snap.val() ?? {})
+                .map((raw) => normalizeHistorySample(raw))
+                .filter(Boolean)
+                .sort((a, b) => a.t - b.t)
+              setLogged((prev) => ({ ...prev, [device]: samples }))
+            },
+            // Not fatal: the live node still drives the dashboard.
+            () => {},
+          ),
+        )
+      }
+    })
+    return () => {
+      cancelled = true
+      for (const unsubscribe of unsubscribers) unsubscribe()
+    }
+  }, [hardwareDevices])
+
+  useEffect(() => {
+    const byBedId = {}
+    for (const bed of configs) {
+      if (bed.device !== SIMULATED_DEVICE && logged[bed.device]) byBedId[bed.id] = logged[bed.device]
+    }
+    if (Object.keys(byBedId).length > 0) setData((prev) => mergeLoggedHistory(prev, byBedId))
+  }, [logged, configs])
 
   // --- Merge ----------------------------------------------------------------
   /** @type {WardBed[]} */

@@ -52,12 +52,30 @@ export function deriveAlerts(reading, thresholds = {}) {
   const add = (kind, severity, reason, action) =>
     alerts.push({ kind, severity, reason, action, message: `${reason} — ${action}` })
 
+  // --- Patient vitals, from the unit's on-device model (firmware v3). ---
+  // A finger PPG cannot diagnose consciousness: the unit flags a still,
+  // clipped-on patient with no pulse or a dangerously low HR or SpO2.
+  if (reading.unresponsive) {
+    add('patient-unresponsive', 'critical', 'Possible unresponsive patient', 'check the patient now')
+  }
+  if (reading.rhythm === 'irregular') {
+    add('irregular-rhythm', 'caution', 'Irregular heartbeat', 'check pulse manually and inform the doctor')
+  }
+  if (reading.hrOutOfRange && Number.isFinite(reading.heartRate) && Number.isFinite(reading.hrLow)) {
+    add(
+      'hr-out-of-range',
+      'caution',
+      `Heart rate ${Math.round(reading.heartRate)}, patient's normal ${reading.hrLow}–${reading.hrHigh}`,
+      'check the patient',
+    )
+  }
+
   // --- High priority: the line is not delivering fluid. ---
-  // An empty bottle explains a stopped line, so it is the only alarm raised;
-  // stacking "flow stopped" under it would just be noise.
+  // An empty bottle explains a stopped line, so it is the only line alarm
+  // raised; stacking "flow stopped" under it would just be noise.
   if (reading.bottleEmpty || pct <= BOTTLE_EMPTY_PERCENT) {
     add('bottle-empty', 'critical', 'Bottle empty', 'replace the IV bottle')
-    return alerts
+    return alerts.sort((a, b) => SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity])
   }
   if (flow <= FLOW_STOPPED_ML_PER_HR) {
     add('flow-stopped', 'critical', 'Flow stopped', 'check clamp, line and cannula')

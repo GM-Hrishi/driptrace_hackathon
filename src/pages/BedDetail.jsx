@@ -3,9 +3,10 @@ import { Link, useNavigate, useParams } from 'react-router'
 
 import { DataGate } from '../components/DataState.jsx'
 import FlowTrendChart from '../components/FlowTrendChart.jsx'
+import VitalsTrendChart from '../components/VitalsTrendChart.jsx'
 import IVBottle from '../components/IVBottle.jsx'
 import { Beacon, Button, ConfirmButton, Tag, buttonClass, channelLabel, formatAgo, formatClock } from '../components/ui.jsx'
-import { getEnabledVitals } from '../config/vitals.js'
+import { getEnabledVitals, vitalPlaceholder } from '../config/vitals.js'
 import { SCENARIOS } from '../lib/mockBeds.js'
 import { alarmClass } from '../lib/severity.js'
 import { acknowledgeAlert, removeBed, updateBed } from '../lib/store.js'
@@ -42,7 +43,8 @@ function formatDuration(ms) {
  * exact quantity; otherwise it stays neutral, so colour on the KPI row always
  * points at the number that is wrong.
  */
-function Kpi({ label, value, unit, format = WHOLE, sub, severity, stale }) {
+function Kpi({ label, value, unit, format = WHOLE, sub, severity, stale, placeholder = '—', text }) {
+  const shown = text ?? (Number.isFinite(value) ? null : placeholder)
   return (
     <div
       data-severity={severity ?? 'normal'}
@@ -51,10 +53,20 @@ function Kpi({ label, value, unit, format = WHOLE, sub, severity, stale }) {
     >
       <p className="text-[11px] font-medium tracking-wide text-ink-subtle uppercase">{label}</p>
       <p className={`dt-nums mt-2 flex items-baseline gap-1.5 leading-none ${stale ? 'opacity-60' : ''}`}>
-        <span className="text-[26px] font-semibold">
-          {Number.isFinite(value) ? <NumberFlow value={value} format={format} /> : '—'}
-        </span>
-        <span className="text-[12px] text-ink-muted">{unit}</span>
+        {shown === null ? (
+          <>
+            <span className="text-[26px] font-semibold">
+              <NumberFlow value={value} format={format} />
+            </span>
+            <span className="text-[12px] text-ink-muted">{unit}</span>
+          </>
+        ) : (
+          // A word instead of a number ("Hold still…") is set smaller so it
+          // never reads as a value.
+          <span className={shown.length > 2 ? 'text-[18px] font-semibold text-ink-muted' : 'text-[26px] font-semibold'}>
+            {shown}
+          </span>
+        )}
       </p>
       <p
         className="dt-nums mt-2 min-h-[1lh] truncate text-[12px]"
@@ -173,6 +185,15 @@ function SensorStatus({ bed, now }) {
   )
 }
 
+const RHYTHM_LABEL = { regular: 'Regular', irregular: 'Irregular', unknown: 'Checking…' }
+
+/** Heart-rate tile subtitle: the patient's learned range, or learning progress. */
+function heartRateSub(reading) {
+  if (Number.isFinite(reading?.hrLow)) return `Patient normal ${reading.hrLow}–${reading.hrHigh} bpm`
+  if (Number.isFinite(reading?.baselinePct) && reading.finger) return `Learning patient range · ${Math.round(reading.baselinePct)}%`
+  return 'MAX30102'
+}
+
 function BedDetailBody({ bed, now, settings, onRemove }) {
   const { reading, channel } = bed
   const offline = channel === 'offline'
@@ -183,6 +204,8 @@ function BedDetailBody({ bed, now, settings, onRemove }) {
   const flow = reading?.flowRateMlPerHr
   const ratio = Number.isFinite(flow) ? flow / bed.prescribedFlowMlPerHr : NaN
   const toEmpty = flow > 1 ? (remainingMl / flow) * 3_600_000 : NaN
+  const vitals = getEnabledVitals(settings)
+  const showHr = vitals.some((v) => v.key === 'heartRate')
 
   return (
     <>
@@ -278,17 +301,50 @@ function BedDetailBody({ bed, now, settings, onRemove }) {
             />
             <Kpi label="Drops / min" value={reading?.dropsPerMin} unit="gtt" stale={offline} sub="20 gtt/mL set" />
             <Kpi label="Weight" value={reading?.weightGrams} unit="g" format={ONE} stale={offline} sub="Bottle + set, HX711" />
-            {getEnabledVitals(settings).map((vital) => (
+            {vitals.map((vital) => (
               <Kpi
                 key={vital.key}
                 label={vital.fullLabel}
                 value={vital.getValue(reading) ?? NaN}
                 unit={vital.unit}
                 stale={offline}
-                sub={vital.source}
+                placeholder={vitalPlaceholder(reading)}
+                severity={vital.key === 'heartRate' ? sevFor('patient-unresponsive', 'hr-out-of-range') : sevFor('patient-unresponsive')}
+                sub={vital.key === 'heartRate' ? heartRateSub(reading) : vital.source}
               />
             ))}
+            {showHr && reading?.rhythm !== undefined && (
+              <Kpi
+                label="Heart rhythm"
+                text={RHYTHM_LABEL[reading.rhythm]}
+                stale={offline}
+                severity={sevFor('irregular-rhythm')}
+                sub={
+                  Number.isFinite(reading.irregularProb)
+                    ? `On-device model · ${Math.round(reading.irregularProb * 100)}% irregular`
+                    : 'On-device model · needs ~30 beats'
+                }
+              />
+            )}
           </div>
+
+          {vitals.length > 0 && !bed.simulated && (
+            <section aria-labelledby="vitals-trend-title" className="dt-card p-5">
+              <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+                <h2 id="vitals-trend-title" className="text-[15px] font-semibold">
+                  Heart rate and SpO₂ trend
+                </h2>
+                <p className="text-[12px] text-ink-subtle">Last 2 hours, logged on the unit</p>
+              </div>
+              <VitalsTrendChart
+                history={bed.history}
+                hrLow={reading?.hrLow}
+                hrHigh={reading?.hrHigh}
+                showHr={showHr}
+                showSpo2={vitals.some((v) => v.key === 'spo2')}
+              />
+            </section>
+          )}
 
           <section aria-labelledby="trend-title" className="dt-card p-5">
             <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
@@ -298,6 +354,11 @@ function BedDetailBody({ bed, now, settings, onRemove }) {
               <p className="text-[12px] text-ink-subtle">
                 Shaded band is ±{settings.flowDeviationPct}% of prescribed; outside it raises a caution alarm
               </p>
+              {reading?.backlog > 0 && (
+                <p className="dt-nums w-full text-[12px] text-ink-muted">
+                  Syncing {reading.backlog.toLocaleString()} readings the unit recorded while offline…
+                </p>
+              )}
             </div>
             <FlowTrendChart history={bed.history} prescribed={bed.prescribedFlowMlPerHr} deviationPct={settings.flowDeviationPct} />
           </section>

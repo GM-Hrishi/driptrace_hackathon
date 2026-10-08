@@ -23,6 +23,19 @@
         "sensorOnline": { ".validate": "newData.isBoolean()" },
         "lastUpdated": { ".validate": "newData.isNumber() && newData.val() <= now + 60000" },
         "severity": { ".validate": "newData.isString() && newData.val().matches(/^(normal|caution|critical)$/)" },
+        "bed": { ".validate": "newData.isString() && newData.val().length <= 48" },
+        "wifi": { ".validate": "newData.isBoolean()" },
+        "backlog": { ".validate": "newData.isNumber() && newData.val() >= 0" },
+        "finger": { ".validate": "newData.isBoolean()" },
+        "signal": { ".validate": "newData.isString() && newData.val().matches(/^(no-finger|acquiring|ok|motion|offline)$/)" },
+        "rhythm": { ".validate": "newData.isString() && newData.val().matches(/^(regular|irregular|unknown)$/)" },
+        "irregularProb": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1" },
+        "baselinePct": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100" },
+        "hrLow": { ".validate": "newData.isNumber() && newData.val() >= 30 && newData.val() <= 200" },
+        "hrHigh": { ".validate": "newData.isNumber() && newData.val() >= 30 && newData.val() <= 200" },
+        "hrOutOfRange": { ".validate": "newData.isBoolean()" },
+        "unresponsive": { ".validate": "newData.isBoolean()" },
+        "unresponsiveWhy": { ".validate": "newData.isString() && newData.val().length <= 16" },
 
         "$other": { ".validate": false }
       }
@@ -36,11 +49,21 @@
         ".indexOn": "t",
 
         "$sampleId": {
-          ".validate": "newData.hasChildren(['t', 'flowRateMlPerHr']) && !data.exists()",
+          ".validate": "newData.hasChildren(['t', 'flowRateMlPerHr']) && $sampleId.matches(/^[0-9]{13}$/)",
 
           "t": { ".validate": "newData.isNumber() && newData.val() <= now + 60000" },
           "flowRateMlPerHr": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000" },
           "bottlePercentRemaining": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100" },
+          "weightGrams": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 5000" },
+          "sensorOnline": { ".validate": "newData.isBoolean()" },
+          "bottleEmpty": { ".validate": "newData.isBoolean()" },
+          "heartRate": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 250" },
+          "spo2": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100" },
+          "irregularProb": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1" },
+          "rhythm": { ".validate": "newData.isString() && newData.val().matches(/^(regular|irregular|unknown)$/)" },
+          "unresponsive": { ".validate": "newData.isBoolean()" },
+          "motion": { ".validate": "newData.isBoolean()" },
+          "approxTime": { ".validate": "newData.isBoolean()" },
 
           "$other": { ".validate": false }
         }

@@ -13,7 +13,9 @@
  *   3. `getValue(reading)` pulls the raw field off a BedReading.
  *
  * Vitals carry no colour here on purpose: status colours are reserved for
- * alarms, and DripTrace raises none on HR or SpO2.
+ * alarms. The HR/SpO2 alarms (possible unresponsive patient, irregular
+ * rhythm, HR outside the patient's learned range) come from the unit's
+ * on-device model and are raised in src/lib/severity.js.
  */
 
 /**
@@ -51,6 +53,24 @@ export const VITALS = [
     getValue: (reading) => (Number.isFinite(reading?.spo2) ? reading.spo2 : null),
   },
 ]
+
+const MISSING = {
+  'no-finger': { short: 'no finger', long: 'Place finger on sensor' },
+  acquiring: { short: 'reading…', long: 'Reading…' },
+  motion: { short: 'hold still', long: 'Hold still…' },
+  offline: { short: 'sensor off', long: 'Pulse sensor offline' },
+}
+
+/**
+ * Why a vital has no value, from the unit's `signal` field, so a missing
+ * number never shows as a bare dash.
+ *
+ * @param {Partial<import('../lib/types.js').BedReading> | null} reading
+ * @param {'short' | 'long'} [form]
+ */
+export function vitalPlaceholder(reading, form = 'long') {
+  return MISSING[reading?.signal]?.[form] ?? '—'
+}
 
 /** Only the vitals currently switched on in Admin. */
 export function getEnabledVitals(settings) {

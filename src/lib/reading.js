@@ -53,8 +53,60 @@ export function normalizeReading(raw, id, now = Date.now()) {
     bottleEmpty: raw.bottleEmpty === true,
     heartRate: num(raw.heartRate, 20, 250),
     spo2: num(raw.spo2, 50, 100),
+    ...normalizeVitalsState(raw),
     // Only an explicit false marks the unit offline; staleness covers the rest.
     sensorOnline: raw.sensorOnline !== false,
+    backlog: num(raw.backlog, 0, 10_000_000),
     lastUpdated,
+  }
+}
+
+const SIGNALS = new Set(['no-finger', 'acquiring', 'ok', 'motion', 'offline'])
+const RHYTHMS = new Set(['regular', 'irregular', 'unknown'])
+const UNRESPONSIVE_WHY = new Set(['no-pulse', 'low-hr', 'low-spo2', 'sim'])
+
+/**
+ * Pulse-oximeter state and the unit's on-device model outputs (firmware v3):
+ * why a vital may be missing, the rhythm classifier, the patient's learned
+ * heart-rate range and the possible-unresponsive flag.
+ */
+function normalizeVitalsState(raw) {
+  const hrLow = num(raw.hrLow, 30, 200)
+  const hrHigh = num(raw.hrHigh, 30, 200)
+  const range = hrLow !== undefined && hrHigh !== undefined && hrLow < hrHigh
+  return {
+    finger: typeof raw.finger === 'boolean' ? raw.finger : undefined,
+    signal: SIGNALS.has(raw.signal) ? raw.signal : undefined,
+    rhythm: RHYTHMS.has(raw.rhythm) ? raw.rhythm : undefined,
+    irregularProb: num(raw.irregularProb, 0, 1),
+    hrLow: range ? hrLow : undefined,
+    hrHigh: range ? hrHigh : undefined,
+    baselinePct: num(raw.baselinePct, 0, 100),
+    hrOutOfRange: raw.hrOutOfRange === true,
+    unresponsive: raw.unresponsive === true,
+    unresponsiveWhy: UNRESPONSIVE_WHY.has(raw.unresponsiveWhy) ? raw.unresponsiveWhy : undefined,
+  }
+}
+
+/**
+ * One second from history/<device>, logged on the unit (possibly while it was
+ * offline) and uploaded later. `approxTime` marks a boot that never synced its
+ * clock, whose times were estimated.
+ *
+ * @param {Record<string, unknown>} raw
+ * @param {number} [now]
+ * @returns {import('./types.js').FlowSample | null}
+ */
+export function normalizeHistorySample(raw, now = Date.now()) {
+  if (!raw || typeof raw !== 'object') return null
+  const t = num(raw.t, 1_600_000_000_000, now + MAX_CLOCK_SKEW_MS)
+  if (t === undefined) return null
+  return {
+    t,
+    flowRateMlPerHr: clamped(raw.flowRateMlPerHr, 0, 1000),
+    bottlePercentRemaining: clamped(raw.bottlePercentRemaining, 0, 100),
+    heartRate: num(raw.heartRate, 20, 250),
+    spo2: num(raw.spo2, 50, 100),
+    approxTime: raw.approxTime === true,
   }
 }

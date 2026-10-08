@@ -38,6 +38,18 @@
  * @property {boolean} bottleEmpty              Hard empty flag from the unit.
  * @property {number}  [heartRate]              bpm from MAX30102. Absent if no finger.
  * @property {number}  [spo2]                   Percent SpO2 from MAX30102.
+ * @property {boolean} [finger]                 A finger is on the pulse sensor.
+ * @property {'no-finger' | 'acquiring' | 'ok' | 'motion' | 'offline'} [signal]
+ *   Why HR/SpO2 may be missing; 'motion' means values are held through movement.
+ * @property {'regular' | 'irregular' | 'unknown'} [rhythm]  On-device rhythm model.
+ * @property {number}  [irregularProb]          Model probability of an irregular rhythm, 0-1.
+ * @property {number}  [hrLow]                  This patient's learned normal HR range, low end.
+ * @property {number}  [hrHigh]                 ...and high end. Absent while learning.
+ * @property {number}  [baselinePct]            Progress learning that range, 0-100.
+ * @property {boolean} [hrOutOfRange]           HR outside the learned range for 30 s.
+ * @property {boolean} [unresponsive]           Possible unresponsive patient (critical).
+ * @property {string}  [unresponsiveWhy]        'no-pulse' | 'low-hr' | 'low-spo2' | 'sim'.
+ * @property {number}  [backlog]                Logged seconds the unit has yet to upload.
  * @property {boolean} sensorOnline             Unit is reporting. NOT a clinical state.
  * @property {number}  lastUpdated              Epoch ms of the unit's last publish.
  * @property {Severity} severity                Computed clinical severity.
@@ -68,14 +80,19 @@
 
 /**
  * @typedef {Object} FlowSample
- *   One point on the flow-rate trend chart.
+ *   One point on the trend charts: logged on the unit (history/<device>) or
+ *   appended live by the browser (`live`).
  * @property {number} t                 Epoch ms.
  * @property {number} flowRateMlPerHr
  * @property {number} bottlePercentRemaining
+ * @property {number} [heartRate]
+ * @property {number} [spo2]
+ * @property {boolean} [approxTime]     Logged on a boot that never synced its clock.
+ * @property {boolean} [live]
  */
 
 /**
- * @typedef {'bottle-empty' | 'flow-stopped' | 'flow-high' | 'flow-low' | 'low-volume'} AlertKind
+ * @typedef {'patient-unresponsive' | 'bottle-empty' | 'flow-stopped' | 'flow-high' | 'flow-low' | 'low-volume' | 'irregular-rhythm' | 'hr-out-of-range'} AlertKind
  */
 
 /**
