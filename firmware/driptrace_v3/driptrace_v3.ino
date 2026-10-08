@@ -44,7 +44,12 @@
  *   - lastUpdated is real epoch milliseconds (was whole seconds).
  *   - dropsPerMin and severity are NOT sent: the dashboard derives both.
  *
- * Not in this build: SG90 clamp servo, battery monitoring, SoftAP hotspot.
+ *   OFFLINE: 1 Hz log on the FAT partition (offline_log.h), backfilled to
+ *   history/<bed> with exact NTP-anchored times; hotspot page DripTrace-<bed>
+ *   at http://192.168.4.1 (local_web.h). Rhythm model + patient baseline +
+ *   possible-unresponsive rule in vitals_ml.h.
+ *
+ * Not in this build: SG90 backflow servos (planned), battery monitoring.
  *
  * Board settings (Arduino IDE / arduino-cli):
  *   ESP32S3 Dev Module, PSRAM: OPI, Flash: 16MB, Partition: 16M Flash (3MB APP/9.9MB FATFS),
@@ -69,6 +74,7 @@
 #include <HTTPClient.h>
 #include <time.h>
 #include "vitals_ml.h"
+#include "offline_log.h"
 #include <sys/time.h>
 
 // ================= Pins (locked, all tested) =================
@@ -185,6 +191,8 @@ State g = {};
 VitalsBrain brain;                  // owned by vitalsTask after setup()
 volatile uint8_t simMode = SIM_OFF; // serial "sim ..." demo injection
 volatile bool baselineResetRequested = false;
+OfflineLog logbook;                 // 1 Hz flash log + history backfill
+#include "local_web.h"              // hotspot dashboard (needs logbook)
 SemaphoreHandle_t stateMutex;
 
 #define LOCK() xSemaphoreTake(stateMutex, portMAX_DELAY)
@@ -790,16 +798,66 @@ uint64_t epochMs() {
   return (uint64_t)tv.tv_sec * 1000ULL + tv.tv_usec / 1000;
 }
 
+// The live bed node, as pushed to Firebase and served on the hotspot.
+int buildLiveJson(char *body, size_t cap) {
+  State s;
+  LOCK();
+  s = g;
+  UNLOCK();
+  int len = snprintf(body, cap,
+    "{\"bed\":\"%s\",\"weightGrams\":%.1f,\"flowRateMlPerHr\":%.1f,\"bottlePercentRemaining\":%.1f,"
+    "\"bottleEmpty\":%s,\"lastUpdated\":%llu,\"sensorOnline\":%s,\"wifi\":%s,\"backlog\":%lu",
+    BED_ID, constrain(s.grossG, 0.0f, 5000.0f), s.flowMlPerHr, s.percent,
+    s.bottleEmpty ? "true" : "false", (unsigned long long)(s.timeSynced ? epochMs() : 0),
+    (s.hxConnected && s.tared) ? "true" : "false", s.wifi ? "true" : "false",
+    (unsigned long)logbook.backlog());
+  // Always say why HR/SpO2 may be missing, so the dashboard need not guess.
+  len += snprintf(body + len, cap - len, ",\"finger\":%s,\"signal\":\"%s\"",
+                  s.finger ? "true" : "false", signalName(s.maxConnected ? s.signal : SIG_OFFLINE));
+  if (s.maxConnected && s.hrValid) len += snprintf(body + len, cap - len, ",\"heartRate\":%d", s.hr);
+  if (s.maxConnected && s.spo2Valid) len += snprintf(body + len, cap - len, ",\"spo2\":%d", s.spo2);
+  if (s.maxConnected) len += appendMlJson(body + len, cap - len, s.ml);
+  len += snprintf(body + len, cap - len, "}");
+  return len;
+}
+
+// One record per second for the offline logbook (called from loop).
+void logSecond() {
+  static uint32_t last = 0;
+  if (millis() - last < 1000) return;
+  last = millis();
+  State s;
+  LOCK();
+  s = g;
+  UNLOCK();
+  LogRec r = {};
+  r.upMs = millis();
+  r.boot = logbook.boot;
+  r.flowX10 = (uint16_t)constrain(s.flowMlPerHr * 10.0f, 0.0f, 65000.0f);
+  r.weightX10 = (uint16_t)constrain(s.grossG * 10.0f, 0.0f, 65000.0f);
+  r.pct = (uint8_t)constrain(lroundf(s.percent), 0L, 100L);
+  r.hr = s.maxConnected && s.hrValid ? (uint8_t)constrain(s.hr, 0, 255) : 0;
+  r.spo2 = s.maxConnected && s.spo2Valid ? (uint8_t)s.spo2 : 0;
+  r.prob = s.maxConnected && s.ml.irregularProb >= 0 ? (uint8_t)lroundf(s.ml.irregularProb * 200.0f) : 255;
+  r.flags = (s.bottleEmpty ? LF_EMPTY : 0) | ((s.hxConnected && s.tared) ? LF_ONLINE : 0) |
+            (s.finger ? LF_FINGER : 0) | (s.signal == SIG_MOTION ? LF_MOTION : 0) |
+            (s.ml.rhythm == RHYTHM_IRREGULAR ? LF_IRREGULAR : 0) | (s.ml.unresponsive ? LF_UNRESP : 0) |
+            (s.ml.hrOutOfRange ? LF_OUT_OF_RANGE : 0);
+  logbook.append(r);
+}
+
 void netTask(void *) {
   WiFiClientSecure client;
   client.setInsecure();  // no certificate pinning (hackathon build)
   HTTPClient https;
   https.setReuse(true);
-  https.setTimeout(5000);
+  https.setTimeout(8000);
   String url = String(DATABASE_URL) + "/beds/" + BED_ID + ".json?auth=" + DATABASE_SECRET;
+  String histUrl = String(DATABASE_URL) + "/history/" + BED_ID + ".json?auth=" + DATABASE_SECRET;
 
-  uint32_t lastPush = 0, lastReconnect = 0;
-  int lastLoggedCode = 0;
+  uint32_t lastPush = 0, lastReconnect = 0, lastBatchFail = 0;
+  int lastLoggedCode = 0, lastLoggedBatch = 0;
+  bool anchored = false;
 
   for (;;) {
     uint32_t now = millis();
@@ -809,58 +867,69 @@ void netTask(void *) {
     g.wifi = wifi;
     g.timeSynced = synced;
     UNLOCK();
+    // First NTP sync of this boot: every record logged so far gets exact time.
+    if (synced && !anchored) {
+      logbook.anchor((int64_t)epochMs());
+      anchored = true;
+    }
 
     if (!wifi) {
-      if (now - lastReconnect > 10000) {
+      // Each STA retry scans channels and briefly disturbs the hotspot, so retry
+      // only every 30 s.
+      if (now - lastReconnect > 30000) {
         lastReconnect = now;
         Serial.println("WiFi down, reconnecting...");
-        WiFi.disconnect();
+        WiFi.disconnect(false, false);
         WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
       }
       vTaskDelay(pdMS_TO_TICKS(250));
       continue;
     }
-    if (!synced || now - lastPush < PUSH_INTERVAL_MS) {
-      vTaskDelay(pdMS_TO_TICKS(50));
+    if (!synced) {
+      vTaskDelay(pdMS_TO_TICKS(100));
       continue;
     }
-    lastPush = now;
 
-    State s;
-    LOCK();
-    s = g;
-    UNLOCK();
-
-    char body[640];
-    int len = snprintf(body, sizeof(body),
-      "{\"weightGrams\":%.1f,\"flowRateMlPerHr\":%.1f,\"bottlePercentRemaining\":%.1f,"
-      "\"bottleEmpty\":%s,\"lastUpdated\":%llu,\"sensorOnline\":%s",
-      constrain(s.grossG, 0.0f, 5000.0f), s.flowMlPerHr, s.percent,
-      s.bottleEmpty ? "true" : "false", (unsigned long long)epochMs(),
-      (s.hxConnected && s.tared) ? "true" : "false");
-    // Always say why HR/SpO2 may be missing, so the dashboard need not guess.
-    len += snprintf(body + len, sizeof(body) - len, ",\"finger\":%s,\"signal\":\"%s\"",
-                    s.finger ? "true" : "false", signalName(s.maxConnected ? s.signal : SIG_OFFLINE));
-    if (s.maxConnected && s.hrValid) len += snprintf(body + len, sizeof(body) - len, ",\"heartRate\":%d", s.hr);
-    if (s.maxConnected && s.spo2Valid) len += snprintf(body + len, sizeof(body) - len, ",\"spo2\":%d", s.spo2);
-    len += appendMlJson(body + len, sizeof(body) - len, s.ml);
-    len += snprintf(body + len, sizeof(body) - len, "}");
-
-    int code = -1;
-    if (https.begin(client, url)) {
-      https.addHeader("Content-Type", "application/json");
-      code = https.PUT((uint8_t *)body, len);
-      https.end();
+    if (now - lastPush >= PUSH_INTERVAL_MS) {
+      lastPush = now;
+      char body[768];
+      int len = buildLiveJson(body, sizeof(body));
+      int code = -1;
+      if (https.begin(client, url)) {
+        https.addHeader("Content-Type", "application/json");
+        code = https.PUT((uint8_t *)body, len);
+        https.end();
+      }
+      LOCK();
+      g.lastHttp = code;
+      UNLOCK();
+      if (code != lastLoggedCode) {
+        lastLoggedCode = code;
+        if (code > 0) Serial.printf("Firebase PUT -> HTTP %d\n", code);
+        else Serial.printf("Firebase PUT failed: %s\n", https.errorToString(code).c_str());
+        if (code == 401) Serial.println("401: DATABASE_SECRET is wrong or missing.");
+      }
     }
-    LOCK();
-    g.lastHttp = code;
-    UNLOCK();
 
-    if (code != lastLoggedCode) {
-      lastLoggedCode = code;
-      if (code > 0) Serial.printf("Firebase PUT -> HTTP %d\n", code);
-      else Serial.printf("Firebase PUT failed: %s\n", https.errorToString(code).c_str());
-      if (code == 401) Serial.println("401: DATABASE_SECRET is wrong or missing.");
+    // Backfill: between live pushes, upload logged seconds to history/<bed>.
+    // Keys are epoch ms, so a re-sent batch overwrites itself.
+    if (now - lastBatchFail > 5000) {
+      String batch;
+      uint32_t endSeq = logbook.nextBatch(batch, 60);
+      if (endSeq) {
+        int code = -1;
+        if (https.begin(client, histUrl)) {
+          https.addHeader("Content-Type", "application/json");
+          code = https.sendRequest("PATCH", (uint8_t *)batch.c_str(), batch.length());
+          https.end();
+        }
+        if (code == 200) logbook.commit(endSeq);
+        else lastBatchFail = now;
+        if (code != lastLoggedBatch) {
+          lastLoggedBatch = code;
+          Serial.printf("History PATCH -> %d, %lu still waiting\n", code, (unsigned long)logbook.backlog());
+        }
+      }
     }
     vTaskDelay(pdMS_TO_TICKS(10));
   }
@@ -1024,7 +1093,7 @@ void updateDisplayAndAlarms() {
   else if (s.maxConnected && s.ml.hrOutOfRange) drawBanner("HR OUTSIDE PATIENT RANGE", ST77XX_ORANGE);
   else if (s.percent < 10) drawBanner("LOW VOLUME", ST77XX_ORANGE);
   else if (!s.maxConnected) drawBanner("PULSE-OX OFFLINE", ST77XX_ORANGE);
-  else if (!s.wifi) drawBanner("OK - NO WIFI", ST77XX_ORANGE);
+  else if (!s.wifi) drawBanner("NO WIFI - AP 192.168.4.1", ST77XX_ORANGE);
   else drawBanner("STATUS: OK", ST77XX_GREEN);
 }
 
@@ -1033,7 +1102,14 @@ void updateDisplayAndAlarms() {
 // =====================================================================
 void setupWiFiAndTime() {
   showBootStatus("WiFi", String("Connecting to ") + WIFI_SSID + "...");
-  WiFi.mode(WIFI_STA);
+  // Hospital WiFi (station) plus the bedside hotspot (access point).
+  WiFi.mode(WIFI_AP_STA);
+  String apSsid = String("DripTrace-") + BED_ID;
+  if (WiFi.softAP(apSsid.c_str(), AP_PASSWORD)) {
+    Serial.printf("Hotspot %s up: http://%s\n", apSsid.c_str(), WiFi.softAPIP().toString().c_str());
+  } else {
+    Serial.println("Hotspot failed to start (AP_PASSWORD needs 8+ characters).");
+  }
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   uint32_t t0 = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - t0 < 15000) delay(250);
@@ -1073,6 +1149,8 @@ void setup() {
   Wire.begin(I2C_SDA, I2C_SCL);
   setupSpeaker();
   setupLoadCell();
+  showBootStatus("Storage", "Mounting offline log...");
+  logbook.begin();
   setupWiFiAndTime();
 
   Serial.println("Rhythm model self-test:");
@@ -1085,7 +1163,8 @@ void setup() {
 
   setupDisplayLayout();
   xTaskCreatePinnedToCore(vitalsTask, "vitals", 8192, NULL, 1, NULL, 0);
-  xTaskCreatePinnedToCore(netTask, "net", 8192, NULL, 1, NULL, 1);
+  xTaskCreatePinnedToCore(netTask, "net", 12288, NULL, 1, NULL, 1);
+  xTaskCreatePinnedToCore(webTask, "web", 8192, NULL, 1, NULL, 1);
   Serial.println("DripTrace v3 up.");
 }
 
@@ -1113,6 +1192,7 @@ void loop() {
   serviceLoadCell();
   updateDisplayAndAlarms();
   serviceSerial();
+  logSecond();
 
   static uint32_t lastStat = 0;
   if (millis() - lastStat >= 5000) {
