@@ -2,7 +2,6 @@ import { useSyncExternalStore } from 'react'
 
 import {
   FLOW_DEVIATION_PERCENT,
-  HX711_CALIBRATION_FACTOR_PLACEHOLDER,
   LOW_VOLUME_PERCENT,
 } from './constants.js'
 import { DEMO_WARD } from './mockBeds.js'
@@ -29,7 +28,6 @@ const STORAGE_KEY = 'driptrace.ward.v1'
  * @property {number}  simSpeed         Simulated time multiplier.
  * @property {number}  lowVolumePct     Ward default low-volume threshold.
  * @property {number}  flowDeviationPct Allowed deviation from the prescribed rate.
- * @property {number}  calibrationFactor HX711 factor on record. Reference only, see Admin.
  */
 
 /** @type {Settings} */
@@ -41,7 +39,6 @@ export const DEFAULT_SETTINGS = {
   simSpeed: 150,
   lowVolumePct: LOW_VOLUME_PERCENT,
   flowDeviationPct: FLOW_DEVIATION_PERCENT,
-  calibrationFactor: HX711_CALIBRATION_FACTOR_PLACEHOLDER,
 }
 
 /**

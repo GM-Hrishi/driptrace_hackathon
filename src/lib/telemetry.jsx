@@ -2,7 +2,9 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { onValue, ref } from 'firebase/database'
 
 import { BEDS_PATH, ensureSignedIn, isFirebaseConfigured, rtdb } from './firebase.js'
+import { applyFlowStoppedGrace, mergeReadings } from './flowHistory.js'
 import { createSimulator } from './mockBeds.js'
+import { normalizeReading } from './reading.js'
 import { deriveAlerts, highestActiveAlert, resolveChannel, sortCriticalFirst } from './severity.js'
 import { useWardStore } from './store.js'
 import { SIMULATED_DEVICE } from './validateBed.js'
@@ -18,9 +20,6 @@ import { SIMULATED_DEVICE } from './validateBed.js'
  * Both are merged with the ward registry into one bed list, with alerts
  * derived against each bed's own prescribed rate and thresholds.
  */
-
-/** Trend chart window, in samples. At one sample a second, three minutes. */
-const HISTORY_LIMIT = 180
 
 /** How long "connecting" may last before the dashboard admits it is offline. */
 const CONNECT_GRACE_MS = 8_000
@@ -71,26 +70,7 @@ export function TelemetryProvider({ children }) {
 
   /** Merge fresh readings in, appending to history only when a unit actually published. */
   const ingest = useCallback((byBedId) => {
-    setData((prev) => {
-      const readings = { ...prev.readings }
-      const history = { ...prev.history }
-      for (const [id, reading] of Object.entries(byBedId)) {
-        const before = prev.readings[id]
-        readings[id] = reading
-        if (!before || before.lastUpdated !== reading.lastUpdated) {
-          const series = prev.history[id] ?? []
-          history[id] = [
-            ...series.slice(-(HISTORY_LIMIT - 1)),
-            {
-              t: reading.lastUpdated,
-              flowRateMlPerHr: reading.flowRateMlPerHr,
-              bottlePercentRemaining: reading.bottlePercentRemaining,
-            },
-          ]
-        }
-      }
-      return { readings, history }
-    })
+    setData((prev) => mergeReadings(prev, byBedId))
   }, [])
 
   // --- Simulation ---------------------------------------------------------
@@ -167,7 +147,7 @@ export function TelemetryProvider({ children }) {
     for (const bed of configs) {
       if (bed.device === SIMULATED_DEVICE) continue
       const reading = devices[bed.device]
-      if (reading && typeof reading === 'object') byBedId[bed.id] = { ...reading, id: bed.id }
+      if (reading && typeof reading === 'object') byBedId[bed.id] = normalizeReading(reading, bed.id)
     }
     if (Object.keys(byBedId).length > 0) ingest(byBedId)
   }, [devices, configs, ingest])
@@ -180,13 +160,15 @@ export function TelemetryProvider({ children }) {
         const simulated = cfg.device === SIMULATED_DEVICE
         const paused = simulated && !settings.simulationMode
         const reading = paused ? null : (data.readings[cfg.id] ?? null)
-        const alerts = reading
+        const history = data.history[cfg.id] ?? []
+        const derived = reading
           ? deriveAlerts(reading, {
               prescribedFlowMlPerHr: cfg.prescribedFlowMlPerHr,
               lowVolumePct: cfg.lowVolumePct ?? settings.lowVolumePct,
               flowDeviationPct: settings.flowDeviationPct,
             })
           : []
+        const alerts = reading && !simulated ? applyFlowStoppedGrace(derived, history, reading) : derived
         const ack = acks[cfg.id]
         const acknowledged = Boolean(ack && alerts[0] && ack.kind === alerts[0].kind)
         const bed = {
@@ -200,7 +182,7 @@ export function TelemetryProvider({ children }) {
           severity: alerts[0]?.severity ?? 'normal',
           acknowledged,
           acknowledgedAt: acknowledged ? ack.at : null,
-          history: data.history[cfg.id] ?? [],
+          history,
         }
         bed.channel = resolveChannel(bed, now)
         return bed

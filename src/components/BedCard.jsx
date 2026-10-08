@@ -28,7 +28,9 @@ export default function BedCard({ bed, now, linked = true }) {
   const top = bed.alerts[0]
   const deviation = bed.alerts.find((a) => a.kind === 'flow-high' || a.kind === 'flow-low')
   const ratio =
-    reading && bed.prescribedFlowMlPerHr ? reading.flowRateMlPerHr / bed.prescribedFlowMlPerHr : null
+    Number.isFinite(reading?.flowRateMlPerHr) && bed.prescribedFlowMlPerHr
+      ? reading.flowRateMlPerHr / bed.prescribedFlowMlPerHr
+      : null
 
   let status
   if (bed.paused) {
@@ -86,7 +88,7 @@ export default function BedCard({ bed, now, linked = true }) {
           <p className="text-[11px] font-medium tracking-wide text-ink-subtle uppercase">Flow rate</p>
           <p className="dt-nums mt-1 flex items-baseline gap-1.5 leading-none">
             <span className="text-[32px] font-semibold">
-              {reading ? (
+              {Number.isFinite(reading?.flowRateMlPerHr) ? (
                 <NumberFlow
                   value={reading.flowRateMlPerHr}
                   format={{ minimumFractionDigits: 1, maximumFractionDigits: 1 }}
@@ -108,7 +110,11 @@ export default function BedCard({ bed, now, linked = true }) {
               </span>
             )}
             <span aria-hidden="true">·</span>
-            <span>{reading ? `${Math.round(reading.bottlePercentRemaining)}% left` : '—'}</span>
+            <span>
+              {Number.isFinite(reading?.bottlePercentRemaining)
+                ? `${Math.round(reading.bottlePercentRemaining)}% left`
+                : '—'}
+            </span>
           </p>
           {vitals.length > 0 && (
             <p className="dt-nums mt-1.5 flex flex-wrap gap-x-3 text-[12px] text-ink-muted">

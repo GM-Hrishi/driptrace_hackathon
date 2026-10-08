@@ -1,50 +1,52 @@
 /**
  * DripTrace hardware and threshold constants.
  *
- * The pin map below is the finalized DripTrace wiring on an ESP32 DOIT DEVKIT
- * V1. It lives here as the single reference the dashboard, the Firebase schema
- * and the setup screens all read from. No firmware is generated from it.
+ * The pin map below is the DripTrace wiring on the ESP32-S3-WROOM-1 N16R8
+ * (docs/hardware/DRIPTRACE_FACTS.md). It lives here as the single reference
+ * the dashboard and the setup screens read from. No firmware is generated
+ * from it.
  */
 
 /** @type {Record<string, { bus: string, pins: Record<string, number>, feeds: string[] }>} */
 export const PIN_MAP = {
   HX711: {
     bus: 'bitbang',
-    pins: { DT: 16, SCK: 17 },
+    pins: { DT: 40, SCK: 41 },
     // Everything about fluid volume is derived from this one load cell.
     feeds: ['weightGrams', 'flowRateMlPerHr', 'dropsPerMin', 'bottlePercentRemaining', 'bottleEmpty'],
   },
   MAX30102: {
     bus: 'i2c',
-    pins: { SDA: 21, SCL: 22 },
+    pins: { SDA: 38, SCL: 39 },
     feeds: ['heartRate', 'spo2'],
   },
   ST7735S: {
     bus: 'spi',
-    pins: { SCLK: 18, MOSI: 23, CS: 5, DC: 27, RST: 26 },
+    pins: { SCLK: 12, MOSI: 11, CS: 10, DC: 7, RST: 6 },
     // On-device display. Nothing here reaches the dashboard.
     feeds: [],
   },
   MAX98357A: {
     bus: 'i2s',
-    pins: { BCLK: 19, LRC: 4, DIN: 13 },
-    // On-device audio alerts. SD tied to VIN, GAIN tied to GND.
+    pins: { BCLK: 20, LRC: 21, DIN: 47 },
+    // On-device audio alerts.
     feeds: [],
   },
 }
 
 /**
- * TODO: RECALIBRATE. This factor was inherited from the sibling VitalFlow
- * board and is a placeholder only. It is NOT valid for the DripTrace load
- * cell. Run a known-mass calibration on the actual DripTrace HX711 + cell
- * before any demo or clinical reading is trusted, and replace this value.
- * Until then every weight-derived field (flow rate, drops/min, percent
- * remaining, empty flag) carries the same unknown scale error.
+ * Load-cell calibration measured on the DripTrace cell on 2026-10-08, from a
+ * full and an empty 100 mL bottle (100.5 g of fluid). The firmware holds and
+ * applies it; the dashboard only displays it.
  */
-export const HX711_CALIBRATION_FACTOR_PLACEHOLDER = 287836.24
+export const HX711_CALIBRATION = {
+  countsPerGram: -255.85,
+  emptyBottleGrams: 16.0,
+  measuredOn: '2026-10-08',
+}
 
-/** True while the calibration above is still the inherited placeholder. */
-export const HX711_CALIBRATION_IS_PLACEHOLDER = true
+/** Standard gravity giving set: drops per mL, used to derive drops/min. */
+export const DROP_FACTOR_GTT_PER_ML = 20
 
 /** A reading older than this means the ESP32 stopped reporting. */
 export const SENSOR_STALE_AFTER_MS = 15_000

@@ -1,10 +1,11 @@
 import { useEffect, useId, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 
-import { CalibrationNotice, NotConfiguredCard } from '../components/DataState.jsx'
-import { Button, SectionTitle, Tag, formatAgo } from '../components/ui.jsx'
+import { NotConfiguredCard } from '../components/DataState.jsx'
+import { Button, ConfirmButton, SectionTitle, Tag, formatAgo } from '../components/ui.jsx'
 import {
-  HX711_CALIBRATION_FACTOR_PLACEHOLDER,
+  DROP_FACTOR_GTT_PER_ML,
+  HX711_CALIBRATION,
   PIN_MAP,
 } from '../lib/constants.js'
 import { isFirebaseConfigured, missingFirebaseConfig } from '../lib/firebase.js'
@@ -134,32 +135,6 @@ function Switch({ checked, onChange, label, description }) {
   )
 }
 
-/** Two-step destructive action: the first click arms it, the second confirms. */
-function ConfirmButton({ children, confirmLabel, onConfirm, size = 'sm' }) {
-  const [armed, setArmed] = useState(false)
-  useEffect(() => {
-    if (!armed) return undefined
-    const timer = setTimeout(() => setArmed(false), 4000)
-    return () => clearTimeout(timer)
-  }, [armed])
-  return (
-    <Button
-      size={size}
-      variant="danger"
-      onClick={() => {
-        if (armed) {
-          setArmed(false)
-          onConfirm()
-        } else {
-          setArmed(true)
-        }
-      }}
-    >
-      {armed ? confirmLabel : children}
-    </Button>
-  )
-}
-
 function Panel({ children, className = '' }) {
   return <section className={`dt-card p-6 ${className}`}>{children}</section>
 }
@@ -277,43 +252,29 @@ function SystemStatus() {
 }
 
 function Calibration() {
-  const { settings } = useTelemetry()
-  const placeholder = settings.calibrationFactor === HX711_CALIBRATION_FACTOR_PLACEHOLDER
+  const rows = [
+    ['Scale', `${HX711_CALIBRATION.countsPerGram} counts/g`],
+    ['Empty bottle', `${HX711_CALIBRATION.emptyBottleGrams} g`],
+    ['Drop factor', `${DROP_FACTOR_GTT_PER_ML} gtt/mL`],
+    ['HX711 pins', `DT ${PIN_MAP.HX711.pins.DT} · SCK ${PIN_MAP.HX711.pins.SCK}`],
+  ]
   return (
     <Panel>
       <SectionTitle hint="Scale factor that turns raw HX711 counts into grams.">Load cell calibration</SectionTitle>
-      <div
-        data-severity="caution"
-        className="rounded-control mb-5 border px-4 py-3 text-[13px] leading-relaxed"
-        style={{ borderColor: 'var(--dt-sev)', backgroundColor: 'var(--dt-sev-tint)' }}
-      >
-        <p className="font-semibold" style={{ color: 'var(--dt-sev)' }}>
-          <span className="dt-nums">TODO</span> · {placeholder ? 'Still the inherited placeholder' : 'Recorded here only'}
-        </p>
-        <p className="mt-1 text-ink-muted">
-          The firmware holds the factor it actually uses. This value is the dashboard&apos;s
-          reference copy and is not sent to the device: client writes are denied by design. Run a
-          known-mass calibration on the DripTrace cell (HX711 DT {PIN_MAP.HX711.pins.DT}, SCK{' '}
-          {PIN_MAP.HX711.pins.SCK}) and record the result here and in firmware.
-        </p>
-      </div>
-      <NumberSetting
-        label="HX711 calibration factor"
-        value={settings.calibrationFactor}
-        bounds={{ min: 1, max: 10_000_000 }}
-        hint={`Placeholder from VitalFlow: ${HX711_CALIBRATION_FACTOR_PLACEHOLDER}`}
-        onSave={(n) => updateSettings({ calibrationFactor: n })}
-      />
-      {!placeholder && (
-        <Button
-          size="sm"
-          variant="ghost"
-          className="-ml-3"
-          onClick={() => updateSettings({ calibrationFactor: HX711_CALIBRATION_FACTOR_PLACEHOLDER })}
-        >
-          Reset to placeholder
-        </Button>
-      )}
+      <p className="mb-4 text-[13px] leading-relaxed text-ink-muted">
+        Measured on the DripTrace cell on{' '}
+        <span className="dt-nums">{HX711_CALIBRATION.measuredOn}</span> with a full and an empty
+        100 mL bottle. The firmware applies it on the device; the unit tares itself at power-on with
+        the hook empty.
+      </p>
+      <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-[13px]">
+        {rows.map(([label, value]) => (
+          <div key={label}>
+            <dt className="text-[11px] font-medium tracking-wide text-ink-subtle uppercase">{label}</dt>
+            <dd className="dt-nums mt-1 font-medium">{value}</dd>
+          </div>
+        ))}
+      </dl>
     </Panel>
   )
 }
@@ -498,7 +459,6 @@ function BedManagement() {
 }
 
 export default function Admin() {
-  const { settings } = useTelemetry()
   const [params, setParams] = useSearchParams()
   const tab = TABS.some((t) => t.id === params.get('tab')) ? params.get('tab') : 'config'
 
@@ -510,13 +470,7 @@ export default function Admin() {
         browser.
       </p>
 
-      {/* The calibration warning lives here only: it is an engineering task
-          for whoever sets the system up, not something ward staff act on. */}
-      <div className="mt-6">
-        <CalibrationNotice factor={settings.calibrationFactor} />
-      </div>
-
-      <div role="tablist" aria-label="Admin sections" className="rounded-pill mt-1 inline-flex border border-line bg-surface p-1">
+      <div role="tablist" aria-label="Admin sections" className="rounded-pill mt-6 inline-flex border border-line bg-surface p-1">
         {TABS.map((t) => (
           <button
             key={t.id}

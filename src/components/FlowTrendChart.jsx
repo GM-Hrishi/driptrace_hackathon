@@ -57,7 +57,12 @@ function ChartTooltip({ active, payload, prescribed }) {
 export default function FlowTrendChart({ history, prescribed, deviationPct }) {
   const [animate, setAnimate] = useState(true)
 
-  if (history.length < 2) {
+  // A reading with no usable flow value is skipped, not plotted as NaN.
+  const data = history
+    .filter((s) => Number.isFinite(s.t) && Number.isFinite(s.flowRateMlPerHr))
+    .map((s) => ({ t: s.t, flow: s.flowRateMlPerHr }))
+
+  if (data.length < 2) {
     return (
       <div
         className="rounded-control flex items-center justify-center border border-dashed border-line text-[13px] text-ink-subtle"
@@ -68,7 +73,6 @@ export default function FlowTrendChart({ history, prescribed, deviationPct }) {
     )
   }
 
-  const data = history.map((s) => ({ t: s.t, flow: s.flowRateMlPerHr }))
   const band = (prescribed * deviationPct) / 100
   const peak = Math.max(...data.map((d) => d.flow))
   const yMax = Math.ceil(Math.max(peak * 1.1, (prescribed + band) * 1.15, 10) / 10) * 10

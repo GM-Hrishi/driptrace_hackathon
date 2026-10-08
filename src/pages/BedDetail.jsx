@@ -1,14 +1,14 @@
 import NumberFlow from '@number-flow/react'
-import { Link, useParams } from 'react-router'
+import { Link, useNavigate, useParams } from 'react-router'
 
 import { DataGate } from '../components/DataState.jsx'
 import FlowTrendChart from '../components/FlowTrendChart.jsx'
 import IVBottle from '../components/IVBottle.jsx'
-import { Beacon, Button, Tag, buttonClass, channelLabel, formatAgo, formatClock } from '../components/ui.jsx'
+import { Beacon, Button, ConfirmButton, Tag, buttonClass, channelLabel, formatAgo, formatClock } from '../components/ui.jsx'
 import { getEnabledVitals } from '../config/vitals.js'
 import { SCENARIOS } from '../lib/mockBeds.js'
 import { alarmClass } from '../lib/severity.js'
-import { acknowledgeAlert, updateBed } from '../lib/store.js'
+import { acknowledgeAlert, removeBed, updateBed } from '../lib/store.js'
 import { useTelemetry } from '../lib/telemetry.jsx'
 
 /**
@@ -173,7 +173,7 @@ function SensorStatus({ bed, now }) {
   )
 }
 
-function BedDetailBody({ bed, now, settings }) {
+function BedDetailBody({ bed, now, settings, onRemove }) {
   const { reading, channel } = bed
   const offline = channel === 'offline'
   const sevFor = (...kinds) => (offline ? undefined : bed.alerts.find((a) => kinds.includes(a.kind))?.severity)
@@ -194,18 +194,25 @@ function BedDetailBody({ bed, now, settings }) {
           </h1>
           <p className="dt-nums mt-1 text-[14px] text-ink-muted">{bed.patientId}</p>
         </div>
-        <span
-          data-severity={channel}
-          className="rounded-pill flex items-center gap-2 border px-3 py-1.5 text-[13px] font-semibold"
-          style={{
-            color: channel === 'normal' ? 'var(--dt-text-muted)' : 'var(--dt-sev)',
-            borderColor: 'var(--dt-sev)',
-            backgroundColor: 'var(--dt-sev-tint)',
-          }}
-        >
-          <Beacon channel={channel} acknowledged={bed.acknowledged} />
-          {channelLabel(channel)}
-        </span>
+        <div className="flex items-center gap-3">
+          <span
+            data-severity={channel}
+            className="rounded-pill flex items-center gap-2 border px-3 py-1.5 text-[13px] font-semibold"
+            style={{
+              color: channel === 'normal' ? 'var(--dt-text-muted)' : 'var(--dt-sev)',
+              borderColor: 'var(--dt-sev)',
+              backgroundColor: 'var(--dt-sev-tint)',
+            }}
+          >
+            <Beacon channel={channel} acknowledged={bed.acknowledged} />
+            {channelLabel(channel)}
+          </span>
+          {/* Unregisters the bed in this browser only. A hardware unit keeps
+              publishing to the Realtime Database; client writes there are denied. */}
+          <ConfirmButton confirmLabel="Confirm remove" onConfirm={onRemove}>
+            Remove bed
+          </ConfirmButton>
+        </div>
         <dl className="grid w-full grid-cols-2 gap-x-6 gap-y-3 text-[13px] sm:grid-cols-3 lg:grid-cols-5">
           {[
             ['Bed / room', bed.bedNumber],
@@ -331,13 +338,19 @@ export default function BedDetail() {
   const { id } = useParams()
   const { beds, now, settings } = useTelemetry()
   const bed = beds.find((b) => b.id === id)
+  const navigate = useNavigate()
+
+  function remove() {
+    removeBed(bed.id)
+    navigate('/', { replace: true })
+  }
 
   return (
     <section>
       <BackLink />
       <DataGate skeleton={<BedDetailSkeleton />}>
         {bed ? (
-          <BedDetailBody bed={bed} now={now} settings={settings} />
+          <BedDetailBody bed={bed} now={now} settings={settings} onRemove={remove} />
         ) : (
           <div className="dt-card p-8 text-center">
             <h1 className="text-xl font-semibold">This bed is not on the ward</h1>

@@ -1,5 +1,4 @@
 import { missingFirebaseConfig } from '../lib/firebase.js'
-import { HX711_CALIBRATION_FACTOR_PLACEHOLDER } from '../lib/constants.js'
 import { updateSettings } from '../lib/store.js'
 import { useTelemetry } from '../lib/telemetry.jsx'
 import { Button } from './ui.jsx'
@@ -110,29 +109,5 @@ export function DataGate({ skeleton, children }) {
       <ConnectionBanner />
       {children}
     </>
-  )
-}
-
-/** Shown wherever weight-derived numbers are, until the load cell is calibrated. */
-export function CalibrationNotice({ factor }) {
-  if (factor !== HX711_CALIBRATION_FACTOR_PLACEHOLDER) return null
-  return (
-    <div
-      data-severity="caution"
-      className="rounded-card mb-5 flex gap-3 border p-4"
-      style={{ borderColor: 'var(--dt-sev)', backgroundColor: 'var(--dt-sev-tint)' }}
-    >
-      <span aria-hidden="true" className="dt-nums font-semibold text-caution">
-        !!
-      </span>
-      <div className="text-[13px] leading-relaxed">
-        <p className="font-semibold text-caution">Load cell is not calibrated</p>
-        <p className="mt-1 text-ink-muted">
-          The HX711 factor is still <span className="dt-nums">{HX711_CALIBRATION_FACTOR_PLACEHOLDER}</span>,
-          inherited from the VitalFlow board. Every weight-derived reading carries an unknown scale
-          error until this is measured on the DripTrace cell.
-        </p>
-      </div>
-    </div>
   )
 }

@@ -1,4 +1,5 @@
 import { useReducedMotion } from 'motion/react'
+import { useEffect, useState } from 'react'
 
 import { PRIORITY_GLYPH } from '../lib/constants.js'
 import { alarmClass } from '../lib/severity.js'
@@ -26,6 +27,36 @@ export function buttonClass(variant = 'secondary', size = 'md') {
  */
 export function Button({ variant = 'secondary', size = 'md', className = '', type = 'button', ...rest }) {
   return <button type={type} className={`${buttonClass(variant, size)} ${className}`} {...rest} />
+}
+
+/**
+ * Two-step destructive action: the first click arms it, the second confirms.
+ * Disarms itself after a few seconds so a stray later click cannot fire it.
+ */
+export function ConfirmButton({ children, confirmLabel, onConfirm, size = 'sm', className = '' }) {
+  const [armed, setArmed] = useState(false)
+  useEffect(() => {
+    if (!armed) return undefined
+    const timer = setTimeout(() => setArmed(false), 4000)
+    return () => clearTimeout(timer)
+  }, [armed])
+  return (
+    <Button
+      size={size}
+      variant="danger"
+      className={className}
+      onClick={() => {
+        if (armed) {
+          setArmed(false)
+          onConfirm()
+        } else {
+          setArmed(true)
+        }
+      }}
+    >
+      {armed ? confirmLabel : children}
+    </Button>
+  )
 }
 
 const CHANNEL_LABEL = {
