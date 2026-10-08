@@ -33,7 +33,7 @@ canvas{width:100%;height:150px;background:var(--card);border:1px solid var(--lin
 <div id="banner">Waiting for data</div>
 <div class="grid">
 <div class="k"><p>Bottle</p><b id="pct">-</b><small id="wt"></small></div>
-<div class="k"><p>Flow</p><b id="flow">-</b><small>mL/hr</small></div>
+<div class="k"><p>Flow</p><b id="flow">-</b><small>mL/min</small></div>
 <div class="k"><p>Heart rate</p><b id="hr">-</b><small id="hrs"></small></div>
 <div class="k"><p>SpO2</p><b id="o2">-</b><small id="rh"></small></div>
 </div>
@@ -56,7 +56,7 @@ async function live(){
  try{const d=await(await fetch("/api/live")).json();
   $("bed").textContent=d.bed||"";
   $("pct").textContent=Math.round(d.bottlePercentRemaining)+"%";$("wt").textContent=d.weightGrams.toFixed(0)+" g on hook";
-  $("flow").textContent=d.flowRateMlPerHr.toFixed(1);
+  $("flow").textContent=(d.flowRateMlPerHr/60).toFixed(2);
   const why=SIG[d.signal]||"";
   $("hr").textContent=d.heartRate??"-";$("o2").textContent=d.spo2!=null?d.spo2+"%":"-";
   $("hrs").textContent=d.hrLow?("normal "+d.hrLow+"-"+d.hrHigh+" bpm"):(d.heartRate?("learning range "+d.baselinePct+"%"):why);

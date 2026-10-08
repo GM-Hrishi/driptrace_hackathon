@@ -288,7 +288,7 @@ function BedDetailBody({ bed, now, settings, onRemove }) {
               format={ONE}
               stale={offline}
               severity={sevFor('flow-high', 'flow-low', 'flow-stopped')}
-              sub={Number.isFinite(ratio) ? `Rx ${bed.prescribedFlowMlPerHr} · ${ratio.toFixed(1)}x` : `Rx ${bed.prescribedFlowMlPerHr}`}
+              sub={`${Number.isFinite(flow) ? `${(flow / 60).toFixed(2)} mL/min · ` : ''}Rx ${bed.prescribedFlowMlPerHr}${Number.isFinite(ratio) ? ` · ${ratio.toFixed(1)}x` : ''}`}
             />
             <Kpi
               label="Bottle remaining"
