@@ -39,6 +39,8 @@ WINDOW = 30          # RR intervals per window (firmware RR_WINDOW)
 STEP = 10            # beats between training windows
 SPS = 50.0           # MAX30102 rate in firmware v3
 NSR_HOURS = 3.0      # hours taken from each (24 h) NSR record
+JITTER_MS = 35.0     # PPG beat-timing noise added to ECG beat times
+CACHE = pathlib.Path.home() / ".cache" / "driptrace-physionet"
 
 FEATURES = ["cv", "rmssd_n", "pnn50", "medad_n", "tpr"]
 
@@ -86,7 +88,9 @@ def features(rr: np.ndarray) -> np.ndarray:
 # --------------------------------------------------------------------------
 def degrade(beats_ms: np.ndarray, rng: np.random.Generator) -> np.ndarray:
     """Make ECG beat times look like PPG detections at 50 sps."""
-    t = beats_ms + rng.normal(0.0, 15.0, beats_ms.shape)               # pulse transit jitter
+    # Beat-time jitter as measured on the MAX30102 (bench 2026-10-08: median
+    # |dRR| ~55-60 ms on a resting, regular pulse => ~35 ms per beat).
+    t = beats_ms + rng.normal(0.0, JITTER_MS, beats_ms.shape)
     t = t[rng.random(t.shape) > 0.02]                                   # 2 % missed beats
     gaps = np.diff(t)
     at = np.where(rng.random(gaps.shape) < 0.01)[0]                     # 1 % double bumps
@@ -96,9 +100,22 @@ def degrade(beats_ms: np.ndarray, rng: np.random.Generator) -> np.ndarray:
     return np.round(t / q) * q                                          # sample quantisation
 
 
+def rdann(rec, ext, db, **kw):
+    """wfdb.rdann with a local pickle cache (PhysioNet streaming is slow)."""
+    import pickle
+
+    CACHE.mkdir(parents=True, exist_ok=True)
+    path = CACHE / f"{db}_{rec}_{ext}_{kw.get('sampto', 'all')}.pkl"
+    if path.exists():
+        return pickle.loads(path.read_bytes())
+    ann = wfdb.rdann(rec, ext, pn_dir=db, **kw)
+    path.write_bytes(pickle.dumps(ann))
+    return ann
+
+
 def segments_afdb(rec: str):
     """(start_ms, end_ms, label) rhythm segments; label 1 = AF, 0 = N."""
-    atr = wfdb.rdann(rec, "atr", pn_dir="afdb")
+    atr = rdann(rec, "atr", "afdb")
     out = []
     for i, note in enumerate(atr.aux_note):
         start = atr.sample[i] * 1000.0 / atr.fs
@@ -127,7 +144,7 @@ def load(seed: int):
     data = {}
     for rec in wfdb.get_record_list("afdb"):
         try:
-            qrs = wfdb.rdann(rec, "qrs", pn_dir="afdb")
+            qrs = rdann(rec, "qrs", "afdb")
             segs = segments_afdb(rec)
         except Exception as exc:  # a few records lack annotation files
             print(f"  afdb {rec}: skipped ({exc.__class__.__name__})")
@@ -138,7 +155,7 @@ def load(seed: int):
             print(f"  afdb {rec}: {len(y)} windows, {int(np.sum(y))} AF")
     for rec in wfdb.get_record_list("nsrdb"):
         try:
-            ann = wfdb.rdann(rec, "atr", pn_dir="nsrdb", sampto=int(NSR_HOURS * 3600 * 128))
+            ann = rdann(rec, "atr", "nsrdb", sampto=int(NSR_HOURS * 3600 * 128))
         except Exception as exc:
             print(f"  nsrdb {rec}: skipped ({exc.__class__.__name__})")
             continue

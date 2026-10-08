@@ -74,6 +74,7 @@
 #include <HTTPClient.h>
 #include <time.h>
 #include "vitals_ml.h"
+#include "pulse_detector.h"
 #include "offline_log.h"
 #include <sys/time.h>
 
@@ -191,6 +192,8 @@ State g = {};
 VitalsBrain brain;                  // owned by vitalsTask after setup()
 volatile uint8_t simMode = SIM_OFF; // serial "sim ..." demo injection
 volatile bool baselineResetRequested = false;
+volatile uint32_t beatDetections = 0; // debug: beat detector hits
+volatile bool rawStream = false;       // serial "raw on": R,<idx>,<ir>,<red>,<beat>,<moving> per sample
 OfflineLog logbook;                 // 1 Hz flash log + history backfill
 #include "local_web.h"              // hotspot dashboard (needs logbook)
 SemaphoreHandle_t stateMutex;
@@ -502,7 +505,9 @@ void vitalsTask(void *) {
   uint16_t ringPos = 0, ringCount = 0, sinceSpo2 = 0;
   bool haveBeat = false;
   uint8_t rejectRun = 0;
-  int algoHr = 0;
+  int algoHr = 0, prevAlgoHr = 0;
+  PulseDetector pulse;
+  int lastSpo2 = 0, pendingSpo2 = 0;
 
   // Finger presence is debounced: a dip under the threshold shorter than
   // FINGER_OFF_SAMPLES is a slip (treated as motion), not a removal, so it
@@ -550,6 +555,7 @@ void vitalsTask(void *) {
     resetHr();
     resetSpo2Window();
     lastAlgoHrMs = lastSpo2Ms = heldHrMs = 0;
+    prevAlgoHr = lastSpo2 = pendingSpo2 = 0;
   };
 
   for (;;) {
@@ -613,6 +619,7 @@ void vitalsTask(void *) {
         lastMotionMs = millis();
         resetHr();
         resetSpo2Window();
+        pulse.reset(ir);
       }
       if (offRun >= FINGER_OFF_SAMPLES) {
         fingerRemoved();
@@ -637,8 +644,12 @@ void vitalsTask(void *) {
         lastMotionMs = millis();
       }
 
-      // Fed every sample so the library's filters stay continuous.
-      bool beat = above && checkForBeat((int32_t)ir);
+      // Fed every sample so the filters stay continuous (pulse_detector.h).
+      bool movingNow = (int32_t)(motionUntilIdx - sampleIdx) > 0;
+      bool beat = above && pulse.update(ir, sampleIdx, movingNow);
+      if (beat) beatDetections++;
+      if (rawStream) Serial.printf("R,%lu,%lu,%lu,%d,%d\n", (unsigned long)sampleIdx, (unsigned long)ir,
+                                   (unsigned long)red, beat, movingNow);
 
       if ((int32_t)(motionUntilIdx - sampleIdx) > 0) {
         // While moving: no beat intervals (one spanning the motion is
@@ -655,7 +666,7 @@ void vitalsTask(void *) {
       // bump inside the same beat and ignored.
       if (beat) {
         // Rhythm stream: keeps irregular beats (see vitals_ml.h).
-        brain.rr.onDetection((uint32_t)(sampleIdx * (1000.0f / MAX_SPS)));
+        brain.rr.onDetection((uint32_t)lroundf(pulse.beatMs));
         if (!haveBeat) {
           haveBeat = true;  // first beat only starts the clock
           lastBeatIdx = sampleIdx;
@@ -701,17 +712,33 @@ void vitalsTask(void *) {
         int32_t spo2 = 0, aHr = 0;
         int8_t spo2Ok = 0, hrOk = 0;
         maxim_heart_rate_and_oxygen_saturation(irLin, BUFFER_SIZE, redLin, &spo2, &spo2Ok, &aHr, &hrOk);
+        // A one-off jump of more than 4 points (bench: 100 -> 71 right after
+        // motion) is held back until the next window confirms it.
         if (spo2Ok == 1 && spo2 >= 70 && spo2 <= 100) {
-          LOCK();
-          g.spo2 = spo2;
-          UNLOCK();
-          lastSpo2Ms = millis();
+          bool confirmed = !lastSpo2 || abs(spo2 - lastSpo2) <= 4 || abs(spo2 - pendingSpo2) <= 2;
+          if (confirmed) {
+            lastSpo2 = spo2;
+            pendingSpo2 = 0;
+            LOCK();
+            g.spo2 = spo2;
+            UNLOCK();
+            lastSpo2Ms = millis();
+          } else {
+            pendingSpo2 = spo2;
+          }
         }
-        // The algorithm's own HR over the 4 s window: used only until the
-        // beat detector has 3 clean beats, so a number shows up in ~5 s.
+        // The algorithm's own HR over the 4 s window is noisy (bench: 46..136
+        // bpm while the beat detector read 64..73). It is only trusted when two
+        // consecutive estimates agree within 12%, and only shown when there is
+        // no held beat-detector value (see below).
         if (hrOk == 1 && aHr >= 40 && aHr <= 180) {
-          algoHr = aHr;
-          lastAlgoHrMs = millis();
+          if (prevAlgoHr && abs(aHr - prevAlgoHr) <= prevAlgoHr * 12 / 100) {
+            algoHr = (aHr + prevAlgoHr) / 2;
+            lastAlgoHrMs = millis();
+          }
+          prevAlgoHr = aHr;
+        } else {
+          prevAlgoHr = 0;
         }
       }
     }
@@ -719,16 +746,20 @@ void vitalsTask(void *) {
     // Publish the vitals snapshot.
     now = millis();
     bool moving = fingerOn && (int32_t)(motionUntilIdx - sampleIdx) > 0;
+    // Beat-detector HR is the measurement. While it recovers (after placing
+    // the finger or after motion) the last good value is held; the SpO2
+    // algorithm's estimate only fills in when nothing is held.
     int hr = 0;
-    bool hrFresh = false;
+    bool hrFresh = false;   // a beat-detector value: drives baseline and alarms
+    bool hrEstimate = false;
     if (hrCount >= 3 && now - lastAcceptedMs < HR_STALE_MS) {
       hr = medianOf(hrCount);
       hrFresh = true;
-    } else if (lastAlgoHrMs && now - lastAlgoHrMs < HR_STALE_MS) {
+    } else if (!(heldHrMs && now - heldHrMs < VITALS_HOLD_MS) && lastAlgoHrMs && now - lastAlgoHrMs < HR_STALE_MS) {
       hr = algoHr;
-      hrFresh = true;
+      hrEstimate = true;
     }
-    if (hrFresh) {
+    if (hrFresh || hrEstimate) {
       heldHr = hr;
       heldHrMs = now;
     }
@@ -737,7 +768,7 @@ void vitalsTask(void *) {
     bool hrShown = fingerOn && heldHrMs && now - heldHrMs < VITALS_HOLD_MS;
     bool spo2Shown = fingerOn && lastSpo2Ms && now - lastSpo2Ms < VITALS_HOLD_MS;
 
-    uint8_t signal = !fingerOn ? SIG_NO_FINGER : moving ? SIG_MOTION : hrFresh ? SIG_OK : SIG_ACQUIRING;
+    uint8_t signal = !fingerOn ? SIG_NO_FINGER : moving ? SIG_MOTION : (hrFresh || hrEstimate) ? SIG_OK : SIG_ACQUIRING;
 
     // Demo injection of a synthetic beat stream (serial "sim regular|irregular").
     uint8_t sim = simMode;
@@ -1183,6 +1214,8 @@ void serviceSerial() {
     else if (line == "sim unresponsive") simMode = SIM_UNRESPONSIVE;
     else if (line == "sim off") simMode = SIM_OFF;
     else if (line == "baseline reset") baselineResetRequested = true;
+    else if (line == "raw on") rawStream = true;
+    else if (line == "raw off") rawStream = false;
     if (line.length()) Serial.printf("cmd '%s' -> sim=%u\n", line.c_str(), simMode);
     line = "";
   }
@@ -1201,10 +1234,10 @@ void loop() {
     LOCK();
     s = g;
     UNLOCK();
-    Serial.printf("STAT hx=%d tared=%d bottle=%d gross=%.1fg fluid=%.1fmL pct=%.0f empty=%d flow=%.1f | max=%d finger=%d sig=%s hr=%d(%d) spo2=%d(%d) | rhythm=%s p=%.2f base=%u%% %d-%d oor=%d unresp=%d | wifi=%d time=%d http=%d\n",
+    Serial.printf("STAT hx=%d tared=%d bottle=%d gross=%.1fg fluid=%.1fmL pct=%.0f empty=%d flow=%.1f | max=%d finger=%d sig=%s hr=%d(%d) spo2=%d(%d) | beats=%lu rr=%u rhythm=%s p=%.2f base=%u%% %d-%d oor=%d unresp=%d | wifi=%d time=%d http=%d\n",
                   s.hxConnected, s.tared, s.bottlePresent, s.grossG, s.fluidMl, s.percent, s.bottleEmpty,
                   s.flowMlPerHr, s.maxConnected, s.finger, signalName(s.signal), s.hr, s.hrValid, s.spo2, s.spo2Valid,
-                  rhythmName(s.ml.rhythm), s.ml.irregularProb, s.ml.baselinePct, s.ml.hrLow, s.ml.hrHigh,
+                  (unsigned long)beatDetections, brain.rr.n, rhythmName(s.ml.rhythm), s.ml.irregularProb, s.ml.baselinePct, s.ml.hrLow, s.ml.hrHigh,
                   s.ml.hrOutOfRange, s.ml.unresponsive, s.wifi,
                   s.timeSynced, s.lastHttp);
   }

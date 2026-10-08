@@ -24,7 +24,7 @@ The data is streamed from PhysioNet, so nothing is stored in the repo. A run tak
 - **MIT-BIH Normal Sinus Rhythm Database** (`nsrdb`): the first 3 h of each record, labelled regular.
 
 The ECG beat times are made to look like the MAX30102 before training:
-- ±15 ms timing jitter
+- ±35 ms timing jitter (measured on the MAX30102 at rest)
 - 20 ms quantisation (50 samples/s)
 - 2 % missed beats and 1 % double detections
 - then the same raw-RR filter the firmware applies (`rr_filter`, mirrored in `RawRrFilter`)
