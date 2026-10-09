@@ -41,6 +41,7 @@ const uint32_t LOG_CAPACITY = 400000;        // records (6.4 MB)
 const uint32_t LOG_FLUSH_MS = 15000;
 const uint8_t LOG_PENDING_MAX = 64;
 const uint8_t LOG_MAX_BOOTS = 24;
+const uint32_t LOG_MIN_FREE_BYTES = 256 * 1024;  // below this at boot, the log is wiped
 const char *LOG_PATH = "/ffat/dt_log.bin";
 
 struct BootInfo {
@@ -66,12 +67,26 @@ struct OfflineLog {
   void begin() {
     mtx = xSemaphoreCreateMutex();
     ok = FFat.begin(true);  // formats the partition on first use (takes a few s)
+    bool wiped = false;
+    if (ok && FFat.freeBytes() < LOG_MIN_FREE_BYTES) {
+      // A full partition makes every write fail, which silently stalls the
+      // history upload. Say what filled it, then start the log afresh.
+      Serial.printf("Offline log: only %u KB free, wiping the log partition\n",
+                    (unsigned)(FFat.freeBytes() / 1024));
+      File root = FFat.open("/");
+      for (File f = root.openNextFile(); f; f = root.openNextFile())
+        Serial.printf("  %s %u KB\n", f.name(), (unsigned)(f.size() / 1024));
+      root.close();
+      FFat.end();
+      ok = FFat.format() && FFat.begin(true);
+      wiped = true;
+    }
     Preferences p;
     p.begin("dtlog", false);
     boot = p.getUShort("boot", 0) + 1;
     p.putUShort("boot", boot);
-    written = p.getULong("w", 0);
-    uploaded = p.getULong("u", 0);
+    written = wiped ? 0 : p.getULong("w", 0);
+    uploaded = wiped ? 0 : p.getULong("u", 0);
     bootsN = p.getBytes("boots", boots, sizeof(boots)) / sizeof(BootInfo);
     p.end();
     if (bootsN == LOG_MAX_BOOTS) {
@@ -136,7 +151,14 @@ struct OfflineLog {
       for (uint8_t i = 0; i < pendingN; i++) {
         uint32_t slot = written % LOG_CAPACITY;
         if (i == 0 || slot == 0) fseek(f, (long)slot * sizeof(LogRec), SEEK_SET);
-        fwrite(&pending[i], sizeof(LogRec), 1, f);
+        // Count only records that reached the flash, so a failed write is never
+        // "uploaded" as an empty batch.
+        if (fwrite(&pending[i], sizeof(LogRec), 1, f) != 1) {
+          static bool warned = false;
+          if (!warned) Serial.println("Offline log: flash write FAILED (partition full?)");
+          warned = true;
+          break;
+        }
         written++;
       }
       fclose(f);
@@ -185,7 +207,11 @@ struct OfflineLog {
       LogRec r;
       uint32_t slot = seq % LOG_CAPACITY;
       if (seq == start || slot == 0) fseek(f, (long)slot * sizeof(LogRec), SEEK_SET);
-      if (fread(&r, sizeof(r), 1, f) != 1) break;
+      if (fread(&r, sizeof(r), 1, f) != 1) {
+        // Unreadable record: commit only what was actually read, never skip it silently.
+        end = seq;
+        break;
+      }
       bool approx;
       int64_t base = bootEpoch(r.boot, approx);
       if (!base) continue;  // boot evicted from the table: no way to date it
@@ -209,7 +235,7 @@ struct OfflineLog {
     fclose(f);
     json += "}";
     unlock();
-    return end;
+    return end == start ? 0 : end;
   }
 
   void commit(uint32_t seq) {
