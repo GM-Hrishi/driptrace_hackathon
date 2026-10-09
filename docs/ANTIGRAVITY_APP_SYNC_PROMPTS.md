@@ -145,3 +145,64 @@ Alarms (per bed, thresholds: prescribedFlowMlPerHr per bed, optional; lowVolumeP
 Bed setup (bed number, patient, prescribed rate, bottle volume) is NOT in Firebase (writes are denied). Keep it on the phone. Units seen under beds/ that are not assigned yet show as "New units".
 === end contract ===
 ```
+
+---
+
+## PROMPT 4 — final fixes (paste in the app folder)
+
+```
+FINAL FIXES. The demo is soon: make each fix, build, and move on. Do not ask questions unless blocked. Do not add any database secret or auth token anywhere; Firebase access is Anonymous auth + read-only.
+
+=== Facts about the device (verified in the firmware, do not guess) ===
+- Bedside hotspot: SSID "DripTrace-bed-01", password "<AP_PASSWORD>", device IP 192.168.4.1. The board runs AP+STA, so the hotspot is always on, even while it is online.
+- GET http://192.168.4.1/api/live returns the SAME JSON as Firebase beds/bed-01 (weightGrams, flowRateMlPerHr, bottlePercentRemaining, bottleEmpty, lastUpdated, sensorOnline, wifi, backlog, finger, signal, heartRate?, spo2?, fluidMl, capacityMl, rhythm/irregularProb/hrLow/hrHigh/baselinePct/hrOutOfRange/unresponsive when present, clamp). lastUpdated is 0 when the board never synced its clock.
+- GET http://192.168.4.1/api/history?min=N (N 1..120) returns {"points":[[ageSeconds, flowMlPerHr, pct, hr, spo2, flags], ...]}, newest last, max ~360 points. hr/spo2 = 0 means no reading.
+- The firmware sends NO CORS headers. There is no /telemetry and no /command endpoint.
+
+=== 1. Mode B: fix "RECONNECTING..." (root cause: mixed content + CORS + Android routing) ===
+The WebView page is https://appassets.androidplatform.net, so fetch("http://192.168.4.1/...") is blocked (mixed content) and would fail CORS anyway. Do Mode B natively:
+a. New Java class LocalDeviceClient: find the Wi-Fi Network (ConnectivityManager.requestNetwork with NetworkRequest TRANSPORT_WIFI; also accept it if the SSID is DripTrace-*), and open connections with network.openConnection(url) (HttpURLConnection, 2 s connect/read timeout). Do NOT rely on the default route. Poll /api/live every 1 s; fetch /api/history?min=120 when the bed screen opens and every 30 s while it is open.
+b. Push results into the WebView with evaluateJavascript("window.onLocalLive(<json>)") / onLocalHistory(<json>), on the UI thread, JSON-escaped. Keep a @JavascriptInterface method startLocal()/stopLocal() for the JS mode switch.
+c. In JS, Mode B readings go through the SAME parser + alarm engine as Firebase readings. Staleness in Mode B = phone receive time (now - lastReceivedAt > 15 s → "Sensor offline"), because lastUpdated may be 0. If lastUpdated is 0, show times as "approximate".
+d. MonitorService: in Mode B, use LocalDeviceClient instead of FirebaseStream so locked-phone alarms still work with no internet.
+e. Remove any leftover JS fetch to 192.168.4.1, /telemetry or /command. Keep network_security_config cleartext allowed only for 192.168.4.1.
+f. On-screen status line in Mode B: "Wi-Fi: <ssid or not connected> · Device: reachable / no reply (<error>) · last reading <n> s ago".
+
+=== 2. Firebase mode: fix "couldn't connect" ===
+a. Confirm assets/web/firebase-config.json has 7 real values, not <VITE_FIREBASE_...> placeholders.
+b. Bundle the Firebase JS SDK (compat or modular, any v10/v11 build) and Chart.js as LOCAL files in assets/web. Remove every https:// <script> tag (the CDN fails on the hotspot and when offline).
+c. Serve the WebView only through WebViewAssetLoader (https://appassets.androidplatform.net), never file://. Enable DOM storage.
+d. Add a small status line under the header: "Config ✓ · SDK ✓ · Sign-in ✓ / ✗ <error code> · Beds: <n>". If sign-in fails with an API-key/referrer error, show that code on screen so I can fix the key restriction in Google Cloud.
+e. Stream beds/ with onValue (single subscription). History: history/<unitId> orderByChild("t").startAt(now - range).limitToLast(7200).
+
+=== 3. Bed dashboard (individual bed screen) ===
+a. REMOVE the prescribed-flow-rate slider and presets from the bed screen completely.
+b. The prescribed rate (mL/hr), patient ID, bed number, bottle volume and low-volume % are entered ONLY in the first-time registration form, when a "New unit" is assigned to a bed. On the bed screen show the prescribed rate as read-only text ("Prescribed 60 mL/hr"). Put a small "Edit bed" link at the bottom that reopens the same registration form (needed if a doctor changes the order). Save through the bridge to WardStore (SharedPreferences) so MonitorService uses the same values.
+c. Show: weight g, "X of Y mL" (fluidMl of capacityMl, else %), bottle %, flow mL/hr, drops/min (flow*20/60, 1 decimal), clamp state (open/closed/offline), HR, SpO2, rhythm, and the active alarm banner with Acknowledge.
+
+=== 4. Past IV graphs on the bed screen ===
+a. Chart.js line chart, time on X axis: flow rate (mL/hr, left axis) and bottle % remaining (right axis, 0–100). HR and SpO2 are a second small chart, shown only when the data has values.
+b. Range chips: 30 min · 2 h · 6 h · 24 h (default 2 h). Firebase mode: history/<unitId> as above. Mode B: /api/history?min=min(range,120); convert ageSeconds to time = receiveTime - age*1000.
+c. Downsample to at most ~600 points for drawing. Break the line (null point) where samples are more than 15 s apart, so an offline gap is not drawn as a straight line. Grey dashed style for samples with approxTime true.
+d. "Past infusions" list under the chart: split history into infusions wherever bottle % jumps up by 30+ points (a new bottle was hung). For each one show start time, end time, duration, volume given (start % - end % times capacityMl, or mL difference), and average flow. Tapping one zooms the chart to that infusion.
+e. Empty state: "No history yet. The unit uploads one sample per second while it runs."
+
+=== 5. Show hotspot connection info in the app ===
+Settings → "Direct connection (Mode B)" card:
+  Network: DripTrace-bed-01 [Copy]
+  Password: <AP_PASSWORD> [Copy] [Show/Hide], hidden by default
+  Device address: http://192.168.4.1
+  Button "Open Wi-Fi settings" (Settings.Panel.ACTION_WIFI on Android 10+, else Settings.ACTION_WIFI_SETTINGS).
+  Short steps: "1 Open Wi-Fi settings  2 Join DripTrace-bed-01  3 If Android says 'No internet', tap 'Stay connected'  4 Come back; the app switches to the device."
+Store SSID/password as constants in one file (hotspotConfig), with SSID built as "DripTrace-" + bedId so another bed works later. Fix any stale "DripTrace-Demo" text anywhere.
+
+=== 6. Alarm parity addition (the website does this) ===
+For a hardware bed, hold back "flow-stopped" until flow has been <= 1 mL/hr for 60 s continuously (after a bottle is hung, flow reads 0 while the scale settles). Implement in alerts.js AND AlertRules.java/MonitorService, and add a test: flow 0 for 30 s → no flow-stopped; flow 0 for 61 s → flow-stopped.
+
+=== Verify and report (PASS / FAIL / NOT RUN, with output) ===
+1. .\gradlew.bat assembleDebug and .\gradlew.bat testDebugUnitTest pass; node test_alerts.js passes. Give the APK path.
+2. grep the web assets: no "https://" script tags, no "/command", no "telemetry/latest", no "Auth Token", no "DripTrace-Demo".
+3. If adb devices shows a phone: adb install -r the APK, then adb logcat -s DripTraceMonitor DripTraceStream LocalDeviceClient while switching to Mode B on DripTrace-bed-01; paste the lines showing /api/live HTTP 200.
+4. Write TESTING.md with the manual checks: website vs app numbers match on bed-01; power off ESP32 → grey offline in ≤15 s; Mode B with the router off still shows live data and the graph; lock the phone → critical alarm rings and repeats every 30 s; past-infusions list appears after a bottle change.
+Finish with a 10-line summary: what changed, APK path, test results.
+```
