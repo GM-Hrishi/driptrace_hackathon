@@ -495,7 +495,9 @@ function getCurrentAlerts(bedId) {
   const cfg = getBedConfig(bedId);
   const now = Date.now();
   const flow = r.flowRateMlPerHr || 0;
-  
+  // A new bottle restarts the 60 s "no flow" grace; empty explains no flow anyway.
+  if (r.bottleEmpty) delete state.flowStoppedSince[bedId];
+
   if (flow <= 1) {
     if (!state.flowStoppedSince[bedId]) state.flowStoppedSince[bedId] = now;
   } else {

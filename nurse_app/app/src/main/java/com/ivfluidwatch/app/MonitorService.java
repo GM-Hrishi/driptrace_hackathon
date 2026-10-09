@@ -260,6 +260,8 @@ public class MonitorService extends Service {
             Object lowOverride = bed.opt("lowVolumePct");
             double lowVolume = lowOverride instanceof Number ? ((Number) lowOverride).doubleValue() : wardLowVolume;
             double flow = reading.flowRateMlPerHr != null ? reading.flowRateMlPerHr : 0;
+            // A new bottle restarts the 60 s "no flow" grace; empty explains no flow anyway.
+            if (reading.bottleEmpty) flowStoppedSince.remove(bedId);
             if (flow <= AlertRules.FLOW_STOPPED_ML_PER_HR) {
                 if (!flowStoppedSince.containsKey(bedId)) {
                     flowStoppedSince.put(bedId, System.currentTimeMillis());
@@ -277,6 +279,12 @@ public class MonitorService extends Service {
                 continue;
             }
             AlertRules.Alert top = alerts.get(0);
+            // An ack holds only while that same alarm stays on top (as on the website).
+            JSONObject heldAck = pending.optJSONObject(bedId);
+            if (heldAck != null && !top.kind.equals(heldAck.optString("kind"))) {
+                WardStore.clearAck(this, bedId);
+                pending.remove(bedId);
+            }
             if (isAcked(acks, pending, bedId, top.kind)) {
                 clear(nm, bedId);
                 continue;
