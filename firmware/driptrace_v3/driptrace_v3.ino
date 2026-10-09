@@ -172,7 +172,8 @@ enum ClampMode : uint8_t { CLAMP_AUTO, CLAMP_FORCE_OPEN, CLAMP_FORCE_CLOSED };
 volatile uint8_t clampMode = CLAMP_AUTO;  // serial "clamp auto|on|off"
 bool clampWantClosed = false, clampLinkOk = false;
 // End-of-bottle clamp trigger (see serviceClamp).
-const float TAIL_PCT = 20.0f;          // only this low in the bottle can a slow flow clamp
+const float TAIL_PCT = 15.0f;          // only this low in the bottle can a slow flow clamp
+const float CLAMP_AT_PCT = 15.0f;      // shut the line at this level: the load cell drifts too much to wait for empty
 const float TAIL_FRACTION = 0.3f;      // "slow" = below 30 % of the rate it ran at
 const uint32_t TAIL_HOLD_MS = 8000;    // slow (or stopped) this long
 const float REFILL_PCT = 50.0f;        // a bottle this full re-opens the line
@@ -973,11 +974,13 @@ void netTask(void *) {
   client.setInsecure();  // no certificate pinning (hackathon build)
   HTTPClient https;
   https.setReuse(true);
-  https.setTimeout(8000);
+  https.setTimeout(3000);  // a stalled request must not freeze the live view
   String url = String(DATABASE_URL) + "/beds/" + BED_ID + ".json?auth=" + DATABASE_SECRET;
   String histUrl = String(DATABASE_URL) + "/history/" + BED_ID + ".json?auth=" + DATABASE_SECRET;
 
-  uint32_t lastPush = 0, lastReconnect = 0, lastBatchFail = 0;
+  uint32_t lastPush = 0, lastReconnect = 0, lastBatchFail = 0, liveFirstUntil = 0;
+  float lastPushedGross = -1000;
+  bool lastPushedPresent = false;
   int lastLoggedCode = 0, lastLoggedBatch = 0;
   bool anchored = false;
 
@@ -1012,8 +1015,19 @@ void netTask(void *) {
       continue;
     }
 
-    if (now - lastPush >= PUSH_INTERVAL_MS) {
+    // A bottle hung, lifted or swapped goes up at once, ahead of history backfill.
+    float grossNow;
+    bool presentNow;
+    LOCK();
+    grossNow = g.grossG;
+    presentNow = g.bottlePresent;
+    UNLOCK();
+    bool bigChange = fabsf(grossNow - lastPushedGross) > 3.0f || presentNow != lastPushedPresent;
+    if (bigChange) liveFirstUntil = now + 3000;
+    if (bigChange || now - lastPush >= PUSH_INTERVAL_MS) {
       lastPush = now;
+      lastPushedGross = grossNow;
+      lastPushedPresent = presentNow;
       char body[768];
       int len = buildLiveJson(body, sizeof(body));
       int code = -1;
@@ -1035,7 +1049,7 @@ void netTask(void *) {
 
     // Backfill: between live pushes, upload logged seconds to history/<bed>.
     // Keys are epoch ms, so a re-sent batch overwrites itself.
-    if (now - lastBatchFail > 5000) {
+    if ((int32_t)(now - liveFirstUntil) >= 0 && now - lastBatchFail > 5000) {
       String batch;
       uint32_t endSeq = logbook.nextBatch(batch, 60);
       if (endSeq) {
@@ -1383,7 +1397,7 @@ void serviceClamp() {
   // Ran dry on the hook, held EMPTY_HOLD_MS: a bottle lifted or bumped for a
   // moment reads near-empty for a second or two and must not shut the line.
   static uint32_t emptySince = 0;
-  bool emptyNow = armed && hxOk && s.bottlePresent && s.bottleEmpty;
+  bool emptyNow = armed && hxOk && s.bottlePresent && (s.bottleEmpty || s.percent <= CLAMP_AT_PCT);
   emptySince = emptyNow ? (emptySince ? emptySince : millis()) : 0;
   if (emptySince && millis() - emptySince >= EMPTY_HOLD_MS) latched = true;
   if (slowSince && millis() - slowSince >= TAIL_HOLD_MS) latched = true;  // flow tailed off near the end
