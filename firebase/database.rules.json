@@ -20,7 +20,7 @@
           ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 5000"
         },
         "flowRateMlPerHr": {
-          ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000"
+          ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 6000"
         },
         "dropsPerMin": {
           ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 400"
@@ -110,7 +110,7 @@
             ".validate": "newData.isNumber() && newData.val() <= now + 60000"
           },
           "flowRateMlPerHr": {
-            ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000"
+            ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 6000"
           },
           "bottlePercentRemaining": {
             ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100"

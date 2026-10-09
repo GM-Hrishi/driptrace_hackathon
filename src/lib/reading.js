@@ -31,7 +31,7 @@ const MAX_CLOCK_SKEW_MS = 60_000
  * @returns {import('./types.js').BedReading}
  */
 export function normalizeReading(raw, id, now = Date.now()) {
-  const flowRateMlPerHr = clamped(raw.flowRateMlPerHr, 0, 1000)
+  const flowRateMlPerHr = clamped(raw.flowRateMlPerHr, 0, 6000)
   const lastUpdated = num(raw.lastUpdated, 0, now + MAX_CLOCK_SKEW_MS)
 
   // No drop sensor on this build: drops/min follows from the flow rate and the
@@ -60,10 +60,13 @@ export function normalizeReading(raw, id, now = Date.now()) {
     // Unit-side calibration (empty bottle + tube = 0, full = 100 %).
     fluidMl: num(raw.fluidMl, 0, 5000),
     capacityMl: num(raw.capacityMl, 1, 5000),
+    // Backflow clamp on the line (firmware/clamp_node).
+    clamp: CLAMP_STATES.has(raw.clamp) ? raw.clamp : undefined,
     lastUpdated,
   }
 }
 
+const CLAMP_STATES = new Set(['open', 'closed', 'offline'])
 const SIGNALS = new Set(['no-finger', 'acquiring', 'ok', 'motion', 'offline'])
 const RHYTHMS = new Set(['regular', 'irregular', 'unknown'])
 const UNRESPONSIVE_WHY = new Set(['no-pulse', 'low-hr', 'low-spo2', 'sim'])
@@ -106,7 +109,7 @@ export function normalizeHistorySample(raw, now = Date.now()) {
   if (t === undefined) return null
   return {
     t,
-    flowRateMlPerHr: clamped(raw.flowRateMlPerHr, 0, 1000),
+    flowRateMlPerHr: clamped(raw.flowRateMlPerHr, 0, 6000),
     bottlePercentRemaining: clamped(raw.bottlePercentRemaining, 0, 100),
     heartRate: num(raw.heartRate, 20, 250),
     spo2: num(raw.spo2, 50, 100),

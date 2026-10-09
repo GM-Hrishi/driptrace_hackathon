@@ -169,6 +169,11 @@ const uint32_t CLAMP_LINK_LOST_MS = 3500;
 enum ClampMode : uint8_t { CLAMP_AUTO, CLAMP_FORCE_OPEN, CLAMP_FORCE_CLOSED };
 volatile uint8_t clampMode = CLAMP_AUTO;  // serial "clamp auto|on|off"
 bool clampWantClosed = false, clampLinkOk = false;
+// End-of-bottle clamp trigger (see serviceClamp).
+const float TAIL_PCT = 20.0f;          // only this low in the bottle can a slow flow clamp
+const float TAIL_FRACTION = 0.3f;      // "slow" = below 30 % of the rate it ran at
+const uint32_t TAIL_HOLD_MS = 8000;    // slow (or stopped) this long
+const float REFILL_PCT = 50.0f;        // a bottle this full re-opens the line
 volatile int clampAngle = -1;
 volatile uint32_t clampAckMs = 0;
 struct __attribute__((packed)) ClampMsg { char magic[4]; char bed[12]; uint8_t value; uint32_t seq; };
@@ -403,7 +408,7 @@ float adaptiveFlowMlPerHr() {
     float slope, se;
     if (!slopeOver(k, slope, se)) break;
     if (-slope > 3.0f * se && -slope * (k - 1) >= FLOW_MIN_DROP_G) {
-      return constrain(-slope * 3600.0f / FLUID_DENSITY_G_PER_ML, 0.0f, 1000.0f);
+      return constrain(-slope * 3600.0f / FLUID_DENSITY_G_PER_ML, 0.0f, 6000.0f);  // up to 100 mL/min
     }
   }
   return 0;
@@ -1172,7 +1177,25 @@ void updateDisplayAndAlarms() {
   }
   emptyAlarmActive = emptyNow;
 
-  bool vitalsNow = hrBad || spo2Bad;
+  // High HR held 10 s = "patient stressed": orange banner, one short beep.
+  // Low HR held 5 s = critical: red banner, alarm every 5 s while it lasts.
+  // Low SpO2 stays the red VITALS ALERT.
+  static uint32_t hrHighSince = 0, hrLowSince = 0, lastLowBeepMs = 0;
+  static bool stressedActive = false;
+  uint32_t nowMs = millis();
+  bool hrValidNow = s.maxConnected && s.finger && s.hrValid;
+  hrHighSince = hrValidNow && s.hr > HR_HIGH ? (hrHighSince ? hrHighSince : nowMs) : 0;
+  hrLowSince = hrValidNow && s.hr < HR_LOW ? (hrLowSince ? hrLowSince : nowMs) : 0;
+  bool stressed = hrHighSince && nowMs - hrHighSince >= 10000;
+  bool hrLowNow = hrLowSince && nowMs - hrLowSince >= 5000;
+  if (stressed && !stressedActive && !emptyNow) playTone(1200, 80);
+  stressedActive = stressed;
+  if (hrLowNow && nowMs - lastLowBeepMs > 5000) {
+    lastLowBeepMs = nowMs;
+    playAlertVitals();
+  }
+
+  bool vitalsNow = spo2Bad;
   if (vitalsNow && !vitalsAlarmActive && !emptyNow) playAlertVitals();
   vitalsAlarmActive = vitalsNow;
 
@@ -1184,7 +1207,7 @@ void updateDisplayAndAlarms() {
   }
   // Irregular rhythm / HR outside this patient's range: once per episode.
   bool rhythmNow = s.maxConnected && (s.ml.rhythm == RHYTHM_IRREGULAR || s.ml.hrOutOfRange);
-  if (rhythmNow && !rhythmAlarmActive && !emptyNow && !vitalsNow) playAlertVitals();
+  if (rhythmNow && !rhythmAlarmActive && !emptyNow && !vitalsNow && !hrLowNow && !stressed) playAlertVitals();
   rhythmAlarmActive = rhythmNow;
 
   // Banner: most important first.
@@ -1193,7 +1216,9 @@ void updateDisplayAndAlarms() {
   else if (!s.tared) drawBanner("TARING - HOOK EMPTY", ST77XX_YELLOW);
   else if (!s.bottlePresent) drawBanner("HANG IV BOTTLE", ST77XX_YELLOW);
   else if (s.bottleEmpty) drawBanner("BOTTLE EMPTY", ST77XX_RED);
+  else if (hrLowNow) drawBanner("LOW HEART RATE", ST77XX_RED);
   else if (vitalsNow) drawBanner("VITALS ALERT", ST77XX_RED);
+  else if (stressed) drawBanner("PATIENT STRESSED", ST77XX_ORANGE);
   else if (s.maxConnected && s.ml.rhythm == RHYTHM_IRREGULAR) drawBanner("IRREGULAR HEARTBEAT", ST77XX_ORANGE);
   else if (s.maxConnected && s.ml.hrOutOfRange) drawBanner("HR OUTSIDE PATIENT RANGE", ST77XX_ORANGE);
   else if (clampLinkOk && clampWantClosed) drawBanner("LINE CLAMPED", ST77XX_ORANGE);
@@ -1322,12 +1347,31 @@ void serviceClamp() {
   UNLOCK();
   // Armed only once a bottle with real fluid hung here; it then clamps when
   // that bottle runs dry. Drift, boot and an empty hook can never clamp.
-  // Taking the bottle off disarms it (and opens the line).
+  // Lifting a bottle that still has fluid in it does not clamp.
   static bool armed = false;
   bool hxOk = s.hxConnected && s.tared;
   if (hxOk && s.bottlePresent && s.fluidMl > 20.0f) armed = true;
-  if (hxOk && !s.bottlePresent) armed = false;
-  bool ranDry = armed && hxOk && s.bottlePresent && s.bottleEmpty;
+  if (hxOk && !s.bottlePresent) armed = false;  // empty-hook drift can never clamp
+  // End of the bottle: clamp when it has run dry, or earlier when the bottle
+  // is low (<= TAIL_PCT) and its flow has tailed off below TAIL_FRACTION of the
+  // rate it ran at, or stopped, for TAIL_HOLD_MS. The flow estimate already
+  // reads 0 for drift or a swaying bottle, and the level gate keeps a paused
+  // mid-bottle line from clamping. Once shut the line stays shut, also when
+  // the drained tube reads lighter than 'empty' or the bottle is taken down;
+  // only a refilled bottle (>= REFILL_PCT) opens it again.
+  static bool latched = false;
+  static float refFlow = 0;
+  static uint32_t slowSince = 0;
+  if (!armed) refFlow = 0;
+  if (armed && hxOk && s.bottlePresent && s.percent > TAIL_PCT && s.flowMlPerHr > 0)
+    refFlow = refFlow > 0 ? 0.9f * refFlow + 0.1f * s.flowMlPerHr : s.flowMlPerHr;
+  bool low = armed && hxOk && s.bottlePresent && s.percent <= TAIL_PCT;
+  bool tailing = low && refFlow > 0 && s.flowMlPerHr < TAIL_FRACTION * refFlow;
+  slowSince = tailing ? (slowSince ? slowSince : millis()) : 0;
+  if (armed && hxOk && s.bottlePresent && s.bottleEmpty) latched = true;  // ran dry on the hook
+  if (slowSince && millis() - slowSince >= TAIL_HOLD_MS) latched = true;  // flow tailed off near the end
+  if (hxOk && s.bottlePresent && s.percent >= REFILL_PCT) latched = false;
+  bool ranDry = latched;
   clampWantClosed = clampMode == CLAMP_FORCE_CLOSED || (clampMode == CLAMP_AUTO && ranDry);
   ClampMsg m = {};
   memcpy(m.magic, "DTCL", 4);

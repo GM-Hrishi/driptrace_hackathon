@@ -4,6 +4,8 @@ import {
   DEFAULT_FLOW_RANGE_ML_PER_HR,
   FLOW_DEVIATION_PERCENT,
   FLOW_STOPPED_ML_PER_HR,
+  HR_LOW_BELOW,
+  HR_STRESSED_ABOVE,
   LOW_VOLUME_PERCENT,
   SENSOR_STALE_AFTER_MS,
   SEVERITY_RANK,
@@ -58,6 +60,12 @@ export function deriveAlerts(reading, thresholds = {}) {
   if (reading.unresponsive) {
     add('patient-unresponsive', 'critical', 'Possible unresponsive patient', 'check the patient now')
   }
+  const hr = reading.heartRate
+  if (Number.isFinite(hr) && hr < HR_LOW_BELOW) {
+    add('hr-low', 'critical', `Low heart rate ${Math.round(hr)} bpm`, 'check the patient now')
+  } else if (Number.isFinite(hr) && hr > HR_STRESSED_ABOVE) {
+    add('hr-high', 'caution', `Heart rate ${Math.round(hr)} bpm, patient may be stressed`, 'reassure and recheck')
+  }
   if (reading.rhythm === 'irregular') {
     add('irregular-rhythm', 'caution', 'Irregular heartbeat', 'check pulse manually and inform the doctor')
   }
@@ -75,6 +83,12 @@ export function deriveAlerts(reading, thresholds = {}) {
   // raised; stacking "flow stopped" under it would just be noise.
   if (reading.bottleEmpty || pct <= BOTTLE_EMPTY_PERCENT) {
     add('bottle-empty', 'critical', 'Bottle empty', 'replace the IV bottle')
+    return alerts.sort((a, b) => SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity])
+  }
+  // The unit shut the line because the bottle is ending: that, not a
+  // generic "flow stopped", is what staff need to read.
+  if (reading.clamp === 'closed') {
+    add('line-clamped', 'critical', 'Line clamped, bottle finished', 'replace the IV bottle')
     return alerts.sort((a, b) => SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity])
   }
   if (flow <= FLOW_STOPPED_ML_PER_HR) {

@@ -45,8 +45,10 @@ function banner(d){
  if(d.unresponsive)return["crit","CHECK PATIENT NOW - possible unresponsive"];
  if(!d.sensorOnline)return["crit","Load cell offline"];
  if(d.bottleEmpty)return["crit","Bottle empty"];
- if(d.heartRate&&(d.heartRate<50||d.heartRate>120))return["crit","Heart rate "+d.heartRate+" bpm"];
+ if(d.heartRate&&d.heartRate<50)return["crit","Low heart rate "+d.heartRate+" bpm - check the patient"];
  if(d.spo2&&d.spo2<92)return["crit","SpO2 "+d.spo2+"%"];
+ if(d.heartRate>120)return["warn","Heart rate "+d.heartRate+" bpm - patient may be stressed"];
+ if(d.clamp=="closed")return["warn","Line clamped - bottle finished"];
  if(d.rhythm=="irregular")return["warn","Irregular heartbeat"];
  if(d.hrOutOfRange)return["warn","Heart rate outside this patient's normal range"];
  if(d.bottlePercentRemaining<10)return["warn","Low volume"];

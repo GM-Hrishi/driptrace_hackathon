@@ -8,6 +8,12 @@
  */
 
 /** @type {Record<string, { bus: string, pins: Record<string, number>, feeds: string[] }>} */
+/** Heart rate above this reads as a stressed patient (caution). */
+export const HR_STRESSED_ABOVE = 120
+
+/** Heart rate below this is a critical alert. */
+export const HR_LOW_BELOW = 50
+
 export const PIN_MAP = {
   HX711: {
     bus: 'bitbang',
