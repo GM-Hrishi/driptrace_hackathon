@@ -184,7 +184,7 @@ const uint8_t BROADCAST_MAC[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 
 // ================= Audio =================
 #define SAMPLE_RATE 16000
-#define BEEP_AMPLITUDE 1800
+#define BEEP_AMPLITUDE 30000  // near full scale: loud enough for a ward (and a stage)
 const uint32_t EMPTY_ALARM_REPEAT_MS = 20000;
 
 // ================= Shared state =================
