@@ -118,13 +118,15 @@ const uint8_t HX_TARE_SAMPLES = 20;          // ~2 s at 10.9 sps
 const uint8_t HX_MEDIAN_N = 5;
 const uint8_t HX_DISCARD_AFTER_RECONNECT = 3;
 
-const uint16_t FLOW_WINDOW_S = 120;          // regression window
+const uint16_t FLOW_WINDOW_S = 300;          // regression window: 5 min so ward-speed drips (~60 mL/hr) register
 const uint16_t FLOW_MIN_POINTS = 10;         // need 10 s of data before reporting flow
 // Weight change over the window smaller than this is drift, not flow.
 // Drift test: a still, empty (rigid) bottle wandered 7.3..17.5 g in 90 s.
 // With a 120 s window this hides flows below ~240 mL/hr on the current rig.
 const float FLOW_NOISE_G = 8.0f;            // (old fixed gate, kept for reference)
 const float FLOW_MIN_DROP_G = 1.5f;          // smallest drop counted as flow in any window
+const uint32_t FLOW_HOLD_MS = 30000;         // keep the last real rate this long while still draining
+const uint32_t EMPTY_HOLD_MS = 3000;         // "empty" must last this long to latch the clamp
 // Measured: right after hanging, the reading settles/creeps by several grams,
 // which the regression saw as ~400 mL/hr. Ignore that period.
 const uint32_t BOTTLE_SETTLE_MS = 10000;
@@ -403,14 +405,24 @@ bool slopeOver(uint16_t k, float &slope, float &se) {
 // at least FLOW_MIN_DROP_G) wins. Fast draining shows in ~10 s; slow drips
 // need the longer windows to rise above the scale noise.
 float adaptiveFlowMlPerHr() {
-  static const uint16_t WINDOWS[] = {10, 20, 40, 80, 120};
+  static const uint16_t WINDOWS[] = {10, 20, 40, 80, 160, 300};
+  static float lastFlow = 0;
+  static uint32_t lastFlowMs = 0;
+  float longest = 0;  // slope over the longest window available, g/s
   for (uint16_t k : WINDOWS) {
     float slope, se;
     if (!slopeOver(k, slope, se)) break;
+    longest = slope;
     if (-slope > 3.0f * se && -slope * (k - 1) >= FLOW_MIN_DROP_G) {
-      return constrain(-slope * 3600.0f / FLUID_DENSITY_G_PER_ML, 0.0f, 6000.0f);  // up to 100 mL/min
+      lastFlow = constrain(-slope * 3600.0f / FLUID_DENSITY_G_PER_ML, 0.0f, 6000.0f);  // up to 100 mL/min
+      lastFlowMs = millis();
+      return lastFlow;
     }
   }
+  // A slow drip can dip under the noise test for a few seconds; while the
+  // bottle is still getting lighter, keep the last real rate instead of
+  // flickering to 0. A true stop fails this within FLOW_HOLD_MS.
+  if (lastFlowMs && millis() - lastFlowMs < FLOW_HOLD_MS && longest < 0) return lastFlow;
   return 0;
 }
 
@@ -1368,7 +1380,12 @@ void serviceClamp() {
   bool low = armed && hxOk && s.bottlePresent && s.percent <= TAIL_PCT;
   bool tailing = low && refFlow > 0 && s.flowMlPerHr < TAIL_FRACTION * refFlow;
   slowSince = tailing ? (slowSince ? slowSince : millis()) : 0;
-  if (armed && hxOk && s.bottlePresent && s.bottleEmpty) latched = true;  // ran dry on the hook
+  // Ran dry on the hook, held EMPTY_HOLD_MS: a bottle lifted or bumped for a
+  // moment reads near-empty for a second or two and must not shut the line.
+  static uint32_t emptySince = 0;
+  bool emptyNow = armed && hxOk && s.bottlePresent && s.bottleEmpty;
+  emptySince = emptyNow ? (emptySince ? emptySince : millis()) : 0;
+  if (emptySince && millis() - emptySince >= EMPTY_HOLD_MS) latched = true;
   if (slowSince && millis() - slowSince >= TAIL_HOLD_MS) latched = true;  // flow tailed off near the end
   if (hxOk && s.bottlePresent && s.percent >= REFILL_PCT) latched = false;
   bool ranDry = latched;
