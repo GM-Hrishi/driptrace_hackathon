@@ -72,3 +72,11 @@ app/DripTrace_Android_Project.zip
 
 # Firmware credentials (WiFi, database secret)
 secrets.h
+
+# Nurse Android app: machine-local and secret files
+nurse_app/app/build/
+nurse_app/.gradle/
+nurse_app/local.properties
+nurse_app/app/src/main/assets/web/firebase-config.json
+DripTrace_Final_Source/
+DripTrace_Final_Source.zip

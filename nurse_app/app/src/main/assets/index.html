@@ -1,0 +1,781 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<title>DripTrace Companion</title>
+<script src="web/chart.umd.js"></script>
+<style>
+@font-face { font-family: 'Plus Jakarta Sans'; src: url('fonts/PlusJakartaSans-Regular.ttf') format('truetype'); font-weight: 400; }
+@font-face { font-family: 'Plus Jakarta Sans'; src: url('fonts/PlusJakartaSans-Bold.ttf') format('truetype'); font-weight: 700; }
+@font-face { font-family: 'JetBrains Mono'; src: url('fonts/JetBrainsMono-Regular.ttf') format('truetype'); font-weight: 400; }
+@font-face { font-family: 'JetBrains Mono'; src: url('fonts/JetBrainsMono-Bold.ttf') format('truetype'); font-weight: 700; }
+:root {
+  --bg: #070d14; --surface: #0e1724; --surface-bright: #142132; --border: #1b2b3f; --border-light: #253952;
+  --accent: #00d4ff; --accent-glow: rgba(0, 212, 255, 0.25); --green: #10e898; --amber: #f5b027; --red: #ff3b69;
+  --text: #e2f1fc; --text-muted: #5f7a96; --text-dim: #3d5268;
+}
+* { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color: transparent; }
+body { background: var(--bg); color: var(--text); font-family: 'Plus Jakarta Sans', sans-serif; padding-bottom: 30px; user-select: none; }
+.mono { font-family: 'JetBrains Mono', monospace; }
+.app-container { max-width: 540px; margin: 0 auto; padding: 16px 14px; }
+
+/* HEADER */
+.header { display: flex; align-items: center; justify-content: space-between; padding: 8px 4px 16px; }
+.logo-block { display: flex; align-items: center; gap: 10px; }
+.logo-icon { width: 42px; height: 42px; border-radius: 12px; background: linear-gradient(135deg, #00d4ff, #0077aa); display: flex; align-items: center; justify-content: center; }
+.logo-icon svg { width: 22px; height: 22px; fill: #041019; }
+.brand-name { font-size: 1.25rem; font-weight: 800; }
+.brand-name span { color: var(--accent); }
+.brand-tag { font-size: 0.62rem; color: var(--text-muted); font-weight: 600; }
+.header-actions { display: flex; gap: 8px; }
+.btn-icon { background: var(--surface); border: 1px solid var(--border); color: var(--text); width: 38px; height: 38px; border-radius: 10px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+
+/* STATUS BAR */
+.status-bar { display: flex; justify-content: space-between; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 8px 14px; margin-bottom: 12px; font-size: 0.72rem; }
+.mode-badge { padding: 4px 10px; border-radius: 999px; font-weight: 700; background: rgba(0, 212, 255, 0.12); color: var(--accent); border: 1px solid rgba(0, 212, 255, 0.25); }
+.mode-badge.local { background: rgba(16, 232, 152, 0.12); color: var(--green); border-color: rgba(16, 232, 152, 0.25); }
+.conn-indicator { display: flex; align-items: center; gap: 6px; }
+.conn-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); }
+.conn-dot.offline { background: var(--red); }
+
+/* BED SWITCHER */
+.bed-switcher { display: flex; gap: 6px; overflow-x: auto; margin-bottom: 14px; padding-bottom: 2px; }
+.bed-pill { flex: 1; min-width: 80px; text-align: center; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 7px 6px; font-size: 0.75rem; font-weight: 700; color: var(--text-muted); cursor: pointer; }
+.bed-pill.active { background: var(--surface-bright); border-color: var(--accent); color: var(--text); }
+.bed-pill.offline { border-color: var(--text-dim); opacity: 0.7; }
+.bed-pill.caution { border-color: var(--amber); color: var(--amber); }
+.bed-pill.critical { border-color: var(--red); color: var(--red); }
+
+/* ALERT BANNER */
+.alert-banner { display: none; border-radius: 14px; padding: 12px 14px; margin-bottom: 14px; align-items: center; justify-content: space-between; }
+.alert-banner.warning { display: flex; background: rgba(245, 176, 39, 0.12); border: 1px solid var(--amber); color: #ffd680; animation: slowPulse 2s infinite; }
+.alert-banner.critical { display: flex; background: rgba(255, 59, 105, 0.15); border: 1px solid var(--red); color: #ff94ab; animation: fastFlash 0.5s infinite; }
+.alert-banner.acked { animation: none !important; }
+@keyframes slowPulse { 0%,100%{opacity:1;} 50%{opacity:0.6;} }
+@keyframes fastFlash { 0%,100%{border-color:var(--red); background: rgba(255, 59, 105, 0.3);} 50%{border-color:#ff85a1; background: rgba(255, 59, 105, 0.1);} }
+.alert-content { display: flex; align-items: center; gap: 10px; font-size: 0.8rem; }
+.alert-btn { background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.25); border-radius: 8px; padding: 6px 12px; color: #fff; font-size: 0.72rem; font-weight: 700; }
+
+/* GAUGES */
+.grid-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 16px; }
+.card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.card-title { font-size: 0.7rem; font-weight: 700; color: var(--text-muted); }
+.card-badge { font-size: 0.65rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+.badge-good { background: rgba(16, 232, 152, 0.14); color: var(--green); }
+.badge-warn { background: rgba(245, 176, 39, 0.14); color: var(--amber); }
+.badge-bad { background: rgba(255, 59, 105, 0.18); color: var(--red); }
+.badge-offline { background: rgba(95, 122, 150, 0.14); color: var(--text-muted); }
+.flow-readout { text-align: center; padding: 8px 0; }
+.flow-val { font-size: 2.8rem; font-weight: 800; color: var(--accent); line-height: 1; }
+.flow-unit { font-size: 0.82rem; color: var(--text-muted); margin-top: 4px; }
+.flow-sub { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--text-muted); }
+
+.bottle-container { display: flex; align-items: center; justify-content: space-around; padding: 6px 0; }
+.bottle-graphic { width: 56px; height: 110px; border: 2.5px solid var(--border-light); border-radius: 12px 12px 18px 18px; position: relative; background: var(--surface-bright); overflow: hidden; }
+.bottle-fluid { position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(180deg, var(--accent), #0077aa); transition: height 0.4s; }
+.bottle-stats { text-align: right; }
+.bottle-pct { font-size: 1.5rem; font-weight: 800; }
+.bottle-wt { font-size: 0.7rem; color: var(--text-muted); margin-top: 6px; }
+
+/* VITALS */
+.vitals-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 12px; }
+.vital-box { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 12px; text-align: center; }
+.vital-val { font-size: 1.2rem; font-weight: 700; margin-bottom: 2px; }
+.vital-lbl { font-size: 0.6rem; color: var(--text-dim); text-transform: uppercase; font-weight: 700; }
+
+.history-card { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 16px; margin-bottom: 12px; }
+.history-wrap { position: relative; width: 100%; height: 190px; }
+.chips { display: flex; gap: 6px; margin-bottom: 10px; }
+.chip { font-size: 0.68rem; font-weight: 700; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-muted); background: transparent; }
+.chip.on { background: var(--accent); color: #000; border-color: var(--accent); }
+.legend { font-size: 0.65rem; color: var(--text-muted); margin-top: 6px; }
+.legend i { display: inline-block; width: 10px; height: 3px; margin: 0 4px 2px 8px; vertical-align: middle; }
+.inf-list { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px; }
+.inf-row { display: flex; justify-content: space-between; gap: 8px; font-size: 0.72rem; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.inf-row b { font-size: 0.78rem; }
+.inf-empty { font-size: 0.72rem; color: var(--text-muted); padding: 6px 0; }
+.hot { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px; font-size: 0.78rem; }
+.hot-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; }
+.hot-row span.mono { font-weight: 700; }
+.mini-btn { font-size: 0.68rem; font-weight: 700; padding: 4px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-bright); color: var(--text); }
+.steps { font-size: 0.68rem; color: var(--text-muted); line-height: 1.6; margin-top: 6px; }
+
+/* ALARM POPUP */
+.alarm-modal { position: fixed; inset: 0; z-index: 200; display: none; align-items: center; justify-content: center; padding: 20px; background: rgba(4, 10, 16, 0.88); }
+.alarm-modal.show { display: flex; }
+.alarm-card { width: 100%; max-width: 420px; border-radius: 22px; padding: 26px 22px; text-align: center; border: 3px solid var(--red); background: #2a0b14; }
+.alarm-card.critical { animation: alarmFlash 0.5s infinite; }
+.alarm-card.caution { border-color: var(--amber); background: #2a1f08; animation: alarmPulse 1.6s infinite; }
+@keyframes alarmFlash { 0%,100% { background: #4a0f1f; border-color: var(--red); } 50% { background: #1c0710; border-color: #ff85a1; } }
+@keyframes alarmPulse { 0%,100% { background: #3a2a08; } 50% { background: #1f1604; } }
+.alarm-sev { font-size: 0.8rem; font-weight: 800; letter-spacing: 0.12em; color: var(--red); }
+.alarm-card.caution .alarm-sev { color: var(--amber); }
+.alarm-bed { font-size: 1.1rem; font-weight: 700; margin-top: 10px; color: var(--text); }
+.alarm-reason { font-size: 1.9rem; font-weight: 800; line-height: 1.15; margin-top: 14px; color: #fff; }
+.alarm-action { font-size: 1rem; margin-top: 10px; color: #ffd0da; }
+.alarm-card.caution .alarm-action { color: #ffe3a8; }
+.alarm-meta { font-size: 0.75rem; margin-top: 14px; color: var(--text-muted); }
+.alarm-ack { width: 100%; margin-top: 22px; padding: 18px; border: none; border-radius: 16px; font-size: 1.15rem; font-weight: 900; letter-spacing: 0.06em; background: #fff; color: #2a0b14; }
+.alarm-view { width: 100%; margin-top: 10px; padding: 12px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.3); background: transparent; color: #fff; font-size: 0.85rem; font-weight: 700; }
+
+/* MODALS */
+.modal-backdrop { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(4, 10, 16, 0.85); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: 0.3s; z-index: 100; }
+.modal-backdrop.show { opacity: 1; pointer-events: auto; }
+.modal-card { background: var(--bg); border: 1px solid var(--border); border-radius: 20px; width: 90%; max-width: 400px; padding: 20px; max-height: 90vh; overflow-y: auto; }
+.modal-title { font-size: 1.1rem; font-weight: 800; margin-bottom: 16px; }
+.form-grp { margin-bottom: 14px; }
+.form-label { font-size: 0.68rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; margin-bottom: 6px; display: block; }
+.form-input { width: 100%; background: var(--surface-bright); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; color: var(--text); font-size: 0.82rem; }
+.btn-primary { width: 100%; background: var(--accent); color: #000; border: none; border-radius: 12px; padding: 14px; font-size: 0.85rem; font-weight: 800; margin-top: 10px; cursor:pointer;}
+</style>
+</head>
+<body>
+<div class="app-container">
+  <header class="header">
+    <div class="logo-block">
+      <div class="logo-icon"><svg viewBox="0 0 24 24"><path d="M12,2C12,2 5,10 5,15C5,18.86 8.13,22 12,22C15.87,22 19,18.86 19,15C19,10 12,2 12,2M12,20C9.24,20 7,17.76 7,15C7,11.2 10.82,5.55 12,3.87C13.18,5.55 17,11.2 17,15C17,17.76 14.76,20 12,20M12,18A3,3 0 0,0 15,15A3,3 0 0,0 12,12A3,3 0 0,0 9,15A3,3 0 0,0 12,18Z"/></svg></div>
+      <div><div class="brand-name">Drip<span>Trace</span></div><div class="brand-tag">HACKATHON BUILD</div></div>
+    </div>
+    <div class="header-actions">
+      <button class="btn-icon" id="openSettingsBtn" ><svg style="width:20px;height:20px;fill:currentColor" viewBox="0 0 24 24"><path d="M12,15.5A3.5,3.5 0 0,1 8.5,12A3.5,3.5 0 0,1 12,8.5A3.5,3.5 0 0,1 15.5,12A3.5,3.5 0 0,1 12,15.5M19.43,12.98C19.47,12.65 19.5,12.33 19.5,12C19.5,11.67 19.47,11.34 19.43,11L21.54,9.37C21.73,9.22 21.78,8.95 21.66,8.73L19.66,5.27C19.54,5.05 19.27,4.96 19.05,5.05L16.56,6.05C16.04,5.66 15.5,5.32 14.87,5.07L14.5,2.42C14.46,2.18 14.25,2 14,2H10C9.75,2 9.54,2.18 9.5,2.42L9.13,5.07C8.5,5.32 7.96,5.66 7.44,6.05L4.95,5.05C4.73,4.96 4.46,5.05 4.34,5.27L2.34,8.73C2.21,8.95 2.27,9.22 2.46,9.37L4.57,11C4.53,11.34 4.5,11.67 4.5,12C4.5,12.33 4.53,12.65 4.57,12.98L2.46,14.63C2.27,14.78 2.21,15.05 2.34,15.27L4.34,18.73C4.46,18.95 4.73,19.03 4.95,18.95L7.44,17.94C7.96,18.34 8.5,18.68 9.13,18.93L9.5,21.58C9.54,21.82 9.75,22 10,22H14C14.25,22 14.46,21.82 14.5,21.58L14.87,18.93C15.5,18.68 16.04,18.34 16.56,17.94L19.05,18.95C19.27,19.03 19.54,18.95 19.66,18.73L21.66,15.27C21.78,15.05 21.73,14.78 21.54,14.63L19.43,12.98Z"/></svg></button>
+      <button class="btn-icon" id="openBedSetupBtn" style="font-weight:700;">+</button>
+    </div>
+  </header>
+
+  <div class="status-bar">
+    <div class="mode-badge" id="modeBadge">MODE A BACKEND</div>
+    <div class="conn-indicator"><div class="conn-dot" id="connDot"></div><span id="connStatusText">CONNECTED</span></div>
+  </div>
+
+  <div class="bed-switcher" id="bedSwitcher"></div>
+
+  <div class="alert-banner" id="alertBanner">
+    <div class="alert-content">
+      <div>
+        <div style="font-weight:800;" id="alertTitle">CRITICAL</div>
+        <div style="font-size:0.7rem;" id="alertMessage">--</div>
+      </div>
+    </div>
+    <button class="alert-btn" onclick="ackAlert()">ACK</button>
+  </div>
+
+  <div class="grid-2col">
+    <div class="card">
+      <div class="card-header"><span class="card-title">Flow Rate</span><span class="card-badge badge-good mono" id="devBadge">--</span></div>
+      <div class="flow-readout">
+        <div class="flow-val mono" id="flowRateVal">--.-</div>
+        <div class="flow-unit" id="flowUnit">mL / hr</div>
+      </div>
+      <div class="flow-sub">
+        <span>Target: <span id="targetRateText" class="mono">--.-</span></span>
+        <span id="flowState">Normal</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title">Container</span><span class="card-badge badge-good mono" id="bottleStatusBadge">ACTIVE</span></div>
+      <div class="bottle-container">
+        <div class="bottle-graphic"><div class="bottle-fluid" id="bottleFluid" style="height: 0%"></div></div>
+        <div class="bottle-stats">
+          <div class="bottle-pct mono" id="bottlePctVal">--</div>
+          <div class="bottle-wt mono" id="bottleWeightVal">-- g</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="vitals-grid">
+    <div class="vital-box">
+      <div class="vital-val mono" id="hrVal">--</div><div class="vital-lbl">HR (BPM)</div>
+    </div>
+    <div class="vital-box">
+      <div class="vital-val mono" id="spo2Val">--</div><div class="vital-lbl">SpO2</div>
+    </div>
+    <div class="vital-box">
+      <div class="vital-val mono" id="clampVal">--</div><div class="vital-lbl">Clamp</div>
+    </div>
+  </div>
+
+  <div class="history-card">
+    <div class="card-title" style="margin-bottom:10px;">IV History</div>
+    <div class="chips" id="rangeChips">
+      <button class="chip" data-min="30">30 min</button>
+      <button class="chip on" data-min="120">2 h</button>
+      <button class="chip" data-min="360">6 h</button>
+      <button class="chip" data-min="0">Last run</button>
+    </div>
+    <div class="history-wrap"><canvas id="historyChart"></canvas></div>
+    <div class="legend"><i style="background:#00d4ff"></i>Flow mL/hr <i style="background:#10e898"></i>Bottle %</div>
+    <div class="inf-list">
+      <div class="card-title" style="margin-bottom:4px;">Past infusions</div>
+      <div id="infusionList"><div class="inf-empty">No history yet. The unit uploads one sample per second while it runs.</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- Alarm popup: the most urgent unacknowledged alarm on any bed -->
+<div class="alarm-modal" id="alarmModal" role="alertdialog" aria-live="assertive" aria-labelledby="alarmReason">
+  <div class="alarm-card" id="alarmCard">
+    <div class="alarm-sev" id="alarmSev">CRITICAL ALARM</div>
+    <div class="alarm-bed" id="alarmBed">--</div>
+    <div class="alarm-reason" id="alarmReason">--</div>
+    <div class="alarm-action" id="alarmAction">--</div>
+    <div class="alarm-meta" id="alarmMeta"></div>
+    <button class="alarm-ack" id="alarmAckBtn">ACKNOWLEDGE</button>
+    <button class="alarm-view" id="alarmViewBtn">Open this bed</button>
+  </div>
+</div>
+
+<!-- Settings Modal -->
+<div class="modal-backdrop" id="settingsModal">
+  <div class="modal-card">
+    <div class="modal-title">App Settings</div>
+    <div class="form-grp">
+      <label class="form-label">Transport Mode</label>
+      <select class="form-input" id="cfgMode">
+        <option value="A">Mode A - Cloud Firebase (Internet)</option>
+        <option value="B">Mode B - Local ESP32 (Offline WiFi)</option>
+      </select>
+    </div>
+    <div class="form-grp" id="grpModeB" style="display:none;">
+      <label class="form-label">ESP32 Local Endpoint</label>
+      <input type="text" class="form-input" id="cfgLocalUrl" value="http://192.168.4.1">
+    </div>
+    <div class="form-grp">
+      <label class="form-label">Direct connection (Mode B, no internet)</label>
+      <div class="hot">
+        <div class="hot-row"><span>Network</span><span class="mono" id="hotSsid">DripTrace-bed-01</span><button class="mini-btn" onclick="copyText('hotSsid')">Copy</button></div>
+        <div class="hot-row"><span>Password</span><span class="mono" id="hotPass" data-secret="SET_AP_PASSWORD">••••••••••</span>
+          <span><button class="mini-btn" onclick="togglePass()">Show</button> <button class="mini-btn" onclick="copyText('hotPass')">Copy</button></span></div>
+        <div class="hot-row"><span>Device</span><span class="mono">http://192.168.4.1</span></div>
+        <button class="btn-primary" style="margin-top:4px;padding:10px;" onclick="openWifiSettings()">Open Wi-Fi settings</button>
+        <div class="steps">1 Open Wi-Fi settings · 2 Join DripTrace-bed-01 · 3 If Android says "No internet", tap "Stay connected" · 4 Come back, choose Mode B and Save.</div>
+      </div>
+    </div>
+    <button class="btn-primary" id="saveSettingsBtn">SAVE & RESTART</button>
+  </div>
+</div>
+<!-- Bed Setup Modal -->
+<div class="modal-backdrop" id="bedSetupModal">
+  <div class="modal-card">
+    <div class="modal-title" id="bedSetupTitle">Bed Setup</div>
+    <div class="form-grp">
+      <label class="form-label">Patient ID</label>
+      <input type="text" class="form-input" id="setupPatient" placeholder="John Doe">
+    </div>
+    <div class="form-grp">
+      <label class="form-label">Prescribed Rate (mL/hr)</label>
+      <input type="number" class="form-input" id="setupPrescribed" placeholder="60">
+    </div>
+    <div class="form-grp">
+      <label class="form-label">Bottle Volume (mL)</label>
+      <input type="number" class="form-input" id="setupVolume" placeholder="500">
+    </div>
+    <div class="form-grp">
+      <label class="form-label">Low Volume Threshold (%)</label>
+      <input type="number" class="form-input" id="setupLowVolume" value="10">
+    </div>
+    <button class="btn-primary" onclick="saveBedSetup()">SAVE BED</button>
+  </div>
+</div>
+
+
+
+<script src="web/chart.umd.js"></script>
+<script src="web/chartjs-adapter-date-fns.bundle.min.js"></script>
+<script src="web/firebase-app-compat.js"></script>
+<script src="web/firebase-auth-compat.js"></script>
+<script src="web/firebase-database-compat.js"></script>
+<script type="module">
+import { deriveAlerts, isOnline } from "./alerts.js";
+
+const bridge = window.AndroidBridge || {
+  getSetting: (k, d) => localStorage.getItem(k) || d,
+  saveSetting: (k, v) => localStorage.setItem(k, v),
+  startLocal: () => {},
+  stopLocal: () => {},
+  openWifiSettings: () => {}
+};
+
+const state = {
+  mode: bridge.getSetting('cfgMode', 'A'),
+  localUrl: bridge.getSetting('cfgLocalUrl', 'http://192.168.4.1'),
+  activeBed: bridge.getSetting('activeBed', 'bed-01'),
+  beds: {},
+  historyData: [],
+  ackedAlerts: {},
+  flowStoppedSince: {},
+  rangeMin: 120,
+  historyTimer: null,
+  firebaseApp: null
+};
+
+window.openWifiSettings = () => { bridge.openWifiSettings(); };
+window.togglePass = () => {
+  const el = document.getElementById('hotPass');
+  el.textContent = el.textContent.startsWith('•') ? el.dataset.secret : '••••••••••';
+};
+window.copyText = (id) => {
+  const el = document.getElementById(id);
+  const text = el.dataset.secret || el.textContent;
+  try { navigator.clipboard.writeText(text); } catch (e) {}
+  setStatus('Copied ' + (id === 'hotPass' ? 'password' : 'network name'));
+};
+function setStatus(text, ok) {
+  document.getElementById('connStatusText').textContent = text;
+  const dot = document.getElementById('connDot');
+  if (dot) dot.style.background = ok === true ? 'var(--green)' : ok === false ? 'var(--red)' : 'var(--amber)';
+}
+
+document.getElementById('openSettingsBtn').onclick = () => {
+  document.getElementById('cfgMode').value = state.mode;
+  document.getElementById('cfgLocalUrl').value = state.localUrl;
+  document.getElementById('grpModeB').style.display = state.mode === 'B' ? 'block' : 'none';
+  document.getElementById('settingsModal').classList.add('show');
+};
+document.getElementById('cfgMode').onchange = (e) => {
+  document.getElementById('grpModeB').style.display = e.target.value === 'B' ? 'block' : 'none';
+};
+document.getElementById('saveSettingsBtn').onclick = () => {
+  bridge.saveSetting('cfgMode', document.getElementById('cfgMode').value);
+  bridge.saveSetting('cfgLocalUrl', document.getElementById('cfgLocalUrl').value);
+  document.getElementById('settingsModal').classList.remove('show');
+  window.location.reload();
+};
+
+window.openBedSetupBtn.onclick = () => {
+  const cfg = getBedConfig(state.activeBed);
+  document.getElementById('setupPatient').value = cfg.patientId || '';
+  document.getElementById('setupPrescribed').value = cfg.prescribedRate || '';
+  document.getElementById('setupVolume').value = cfg.bottleVolume || '';
+  document.getElementById('setupLowVolume').value = cfg.lowVolumePct || '10';
+  document.getElementById('bedSetupTitle').textContent = `Setup ${state.activeBed}`;
+  document.getElementById('bedSetupModal').classList.add('show');
+};
+
+window.saveBedSetup = () => {
+  const cfg = {
+    patientId: document.getElementById('setupPatient').value,
+    prescribedRate: parseFloat(document.getElementById('setupPrescribed').value) || 0,
+    bottleVolume: parseFloat(document.getElementById('setupVolume').value) || 0,
+    lowVolumePct: parseFloat(document.getElementById('setupLowVolume').value) || 10
+  };
+  bridge.saveSetting('setup_' + state.activeBed, JSON.stringify(cfg));
+  document.getElementById('bedSetupModal').classList.remove('show');
+  renderUI();
+};
+
+/** Kind acknowledged for a bed, from the app or a notification (native store), else this page. */
+function ackedKind(bedId) {
+  try {
+    if (bridge.getAcks) {
+      const acks = JSON.parse(bridge.getAcks() || '{}');
+      if (acks[bedId]) return acks[bedId].kind;
+    }
+  } catch (e) {}
+  return state.ackedAlerts[bedId];
+}
+
+function bedLabel(bedId) {
+  const cfg = getBedConfig(bedId);
+  return cfg.patientId ? cfg.patientId + ' · ' + bedId : bedId;
+}
+
+function acknowledge(bedId, alert) {
+  state.ackedAlerts[bedId] = alert.kind;
+  try { bridge.ackAlert(bedId, alert.kind, bedLabel(bedId), alert.severity, alert.reason); } catch (e) {}
+  renderAlarm();
+  renderUI();
+}
+
+window.ackAlert = () => {
+  const alerts = getCurrentAlerts(state.activeBed);
+  if (alerts.length > 0) acknowledge(state.activeBed, alerts[0]);
+};
+
+const alarm = { bedId: null, alert: null, firstSeen: {}, lastTone: 0, ctx: null, hiddenUntil: 0 };
+
+/** Most urgent alarm on any reporting bed that nobody has acknowledged yet. */
+function topUnackedAlarm() {
+  const now = Date.now();
+  let best = null;
+  for (const bedId of Object.keys(state.beds)) {
+    const r = state.beds[bedId];
+    if (!r || !isOnline(r, now)) continue;
+    const alerts = getCurrentAlerts(bedId);
+    if (!alerts.length) { delete state.ackedAlerts[bedId]; delete alarm.firstSeen[bedId]; continue; }
+    const top = alerts[0];
+    const key = bedId + '|' + top.kind;
+    if (!alarm.firstSeen[bedId] || alarm.firstSeen[bedId].key !== key) alarm.firstSeen[bedId] = { key, at: now };
+    if (ackedKind(bedId) === top.kind) continue;
+    if (!best || (top.severity === 'critical' && best.alert.severity !== 'critical')) {
+      best = { bedId, alert: top, more: alerts.length - 1 };
+    }
+  }
+  return best;
+}
+
+/** IEC 60601-1-8 style tone: high priority = 3 fast beeps every 2 s, medium = 2 beeps every 5 s. */
+function playTone(severity) {
+  const now = Date.now();
+  const critical = severity === 'critical';
+  if (now - alarm.lastTone < (critical ? 2000 : 5000)) return;
+  alarm.lastTone = now;
+  try {
+    alarm.ctx = alarm.ctx || new (window.AudioContext || window.webkitAudioContext)();
+    if (alarm.ctx.state === 'suspended') alarm.ctx.resume();
+    const t0 = alarm.ctx.currentTime;
+    for (let i = 0; i < (critical ? 3 : 2); i++) {
+      const osc = alarm.ctx.createOscillator();
+      const gain = alarm.ctx.createGain();
+      osc.frequency.value = critical ? 880 : 660;
+      gain.gain.setValueAtTime(0.0001, t0 + i * 0.2);
+      gain.gain.exponentialRampToValueAtTime(0.6, t0 + i * 0.2 + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + i * 0.2 + 0.14);
+      osc.connect(gain).connect(alarm.ctx.destination);
+      osc.start(t0 + i * 0.2);
+      osc.stop(t0 + i * 0.2 + 0.16);
+    }
+  } catch (e) {}
+  try { bridge.triggerVibration(critical ? 700 : 300); } catch (e) {}
+}
+
+function renderAlarm() {
+  const modal = document.getElementById('alarmModal');
+  const top = topUnackedAlarm();
+  alarm.bedId = top ? top.bedId : null;
+  alarm.alert = top ? top.alert : null;
+  // "Open this bed" hides the popup briefly; viewing is not acknowledging, so it comes back.
+  if (!top || Date.now() < alarm.hiddenUntil) { modal.classList.remove('show'); return; }
+  const critical = top.alert.severity === 'critical';
+  document.getElementById('alarmCard').className = 'alarm-card ' + (critical ? 'critical' : 'caution');
+  document.getElementById('alarmSev').textContent = critical ? 'CRITICAL ALARM' : 'WARNING';
+  document.getElementById('alarmBed').textContent = bedLabel(top.bedId);
+  document.getElementById('alarmReason').textContent = top.alert.reason;
+  document.getElementById('alarmAction').textContent = top.alert.action.charAt(0).toUpperCase() + top.alert.action.slice(1);
+  const since = alarm.firstSeen[top.bedId] ? alarm.firstSeen[top.bedId].at : Date.now();
+  const secs = Math.max(0, Math.round((Date.now() - since) / 1000));
+  document.getElementById('alarmMeta').textContent =
+    'Active ' + (secs < 60 ? secs + ' s' : Math.floor(secs / 60) + ' min') + (top.more ? ' · ' + top.more + ' more on this bed' : '');
+  modal.classList.add('show');
+  playTone(top.alert.severity);
+}
+
+document.getElementById('alarmAckBtn').onclick = () => {
+  if (alarm.bedId && alarm.alert) acknowledge(alarm.bedId, alarm.alert);
+};
+document.getElementById('alarmViewBtn').onclick = () => {
+  if (!alarm.bedId) return;
+  window.selectBed(alarm.bedId);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  alarm.hiddenUntil = Date.now() + 15000;
+  renderAlarm();
+};
+setInterval(renderAlarm, 1000);
+
+window.selectBed = (bedId) => {
+  state.activeBed = bedId;
+  bridge.saveSetting('activeBed', bedId);
+  renderBedSwitcher();
+  renderUI();
+  subscribeHistory(bedId);
+};
+
+function getBedConfig(bedId) {
+  try {
+    return JSON.parse(bridge.getSetting('setup_' + bedId, '{}'));
+  } catch (e) { return {}; }
+}
+
+function getCurrentAlerts(bedId) {
+  const r = state.beds[bedId];
+  if (!r) return [];
+  const cfg = getBedConfig(bedId);
+  const now = Date.now();
+  const flow = r.flowRateMlPerHr || 0;
+  
+  if (flow <= 1) {
+    if (!state.flowStoppedSince[bedId]) state.flowStoppedSince[bedId] = now;
+  } else {
+    delete state.flowStoppedSince[bedId];
+  }
+  return deriveAlerts(r, cfg.prescribedRate || 0, cfg.lowVolumePct || 10, 30, state.flowStoppedSince[bedId] || 0, now);
+}
+
+const bedSwitcher = document.getElementById('bedSwitcher');
+
+function renderBedSwitcher() {
+  bedSwitcher.innerHTML = '';
+  const bedIds = Object.keys(state.beds).sort();
+  if (bedIds.length === 0) bedIds.push(state.activeBed);
+
+  bedIds.forEach(id => {
+    const el = document.createElement('div');
+    el.className = 'bed-pill';
+    const r = state.beds[id];
+    if (r) {
+      const cfg = getBedConfig(id);
+      el.textContent = (!cfg.patientId && !cfg.prescribedRate) ? id + ' (New)' : (cfg.patientId || id);
+      if (!isOnline(r, Date.now())) el.classList.add('offline');
+      else {
+        const alerts = getCurrentAlerts(id);
+        if (alerts.length > 0) el.classList.add(alerts[0].severity === 'critical' ? 'critical' : 'caution');
+      }
+    } else {
+      el.textContent = id;
+    }
+    if (id === state.activeBed) el.classList.add('active');
+    el.onclick = () => window.selectBed(id);
+    bedSwitcher.appendChild(el);
+  });
+}
+
+function renderUI() {
+  const bedId = state.activeBed;
+  const reading = state.beds[bedId];
+  const cfg = getBedConfig(bedId);
+  
+  if (!reading) return;
+
+  const safeFixed = (v, d) => (v === undefined || v === null || isNaN(v)) ? '--' : Number(v).toFixed(d);
+  const online = isOnline(reading, Date.now());
+  
+  // Alerts
+  const alertBanner = document.getElementById('alertBanner');
+  if (!online) {
+    alertBanner.className = 'alert-banner warning acked';
+    document.getElementById('alertTitle').textContent = 'SENSOR OFFLINE';
+    document.getElementById('alertMessage').textContent = 'Readings are stale, check the unit';
+    alertBanner.style.display = 'flex';
+  } else {
+    const alerts = getCurrentAlerts(bedId);
+    if (alerts.length > 0) {
+      const top = alerts[0];
+      const isAcked = ackedKind(bedId) === top.kind;
+      alertBanner.className = `alert-banner ${top.severity}` + (isAcked ? ' acked' : '');
+      document.getElementById('alertTitle').textContent = top.reason.toUpperCase();
+      document.getElementById('alertMessage').textContent = top.action;
+      alertBanner.style.display = 'flex';
+    } else {
+      alertBanner.style.display = 'none';
+      delete state.ackedAlerts[bedId];
+    }
+  }
+
+  // Gauges
+  document.getElementById('flowRateVal').textContent = online ? safeFixed(reading.flowRateMlPerHr, 1) : '--';
+  document.getElementById('targetRateText').textContent = cfg.prescribedRate ? cfg.prescribedRate.toFixed(1) : 'None';
+  
+  if (reading.fluidMl != null && reading.capacityMl != null) {
+    document.getElementById('bottlePctVal').textContent = `${safeFixed(reading.fluidMl, 0)} of ${safeFixed(reading.capacityMl, 0)}`;
+    document.getElementById('bottlePctVal').style.fontSize = "1rem";
+  } else {
+    document.getElementById('bottlePctVal').textContent = online ? `${safeFixed(reading.bottlePercentRemaining, 0)}%` : '--%';
+    document.getElementById('bottlePctVal').style.fontSize = "1.5rem";
+  }
+  document.getElementById('bottleWeightVal').textContent = online ? `${safeFixed(reading.weightGrams, 1)} g` : '-- g';
+  const pct = reading.bottlePercentRemaining || 0;
+  document.getElementById('bottleFluid').style.height = `${Math.max(4, pct)}%`;
+  
+  const hasGoodSignal = reading.signal === 'ok';
+  document.getElementById('hrVal').textContent = (online && hasGoodSignal && reading.heartRate) ? Math.round(reading.heartRate) : (reading.signal || '--');
+  document.getElementById('spo2Val').textContent = (online && hasGoodSignal && reading.spo2) ? `${Math.round(reading.spo2)}%` : '--';
+  document.getElementById('clampVal').textContent = online ? (reading.clamp || '--') : '--';
+}
+
+function updateHistoryChart() {
+  if (!window.chartInstance) return;
+  const src = state.historyData;
+  const step = Math.max(1, Math.ceil(src.length / 600));
+  const flow = [], pct = [];
+  let prevT = null;
+  for (let i = 0; i < src.length; i += step) {
+    const d = src[i];
+    if (prevT !== null && d.t - prevT > Math.max(15000, step * 2000)) {
+      flow.push({ x: prevT + 1, y: null }); pct.push({ x: prevT + 1, y: null });
+    }
+    flow.push({ x: d.t, y: typeof d.flowRateMlPerHr === 'number' ? d.flowRateMlPerHr : null });
+    pct.push({ x: d.t, y: typeof d.bottlePercentRemaining === 'number' ? d.bottlePercentRemaining : null });
+    prevT = d.t;
+  }
+  const c = window.chartInstance;
+  c.data.datasets[0].data = flow;
+  c.data.datasets[1].data = pct;
+  if (state.rangeMin) {
+    c.options.scales.x.min = Date.now() - state.rangeMin * 60000;
+    c.options.scales.x.max = Date.now();
+  } else {
+    c.options.scales.x.min = src.length ? src[0].t : undefined;
+    c.options.scales.x.max = src.length ? src[src.length - 1].t : undefined;
+  }
+  c.update('none');
+  renderInfusions();
+}
+
+/** Split history into infusions wherever bottle % jumps up 30+ points (a new bottle was hung). */
+function renderInfusions() {
+  const list = document.getElementById('infusionList');
+  const src = state.historyData.filter(d => typeof d.bottlePercentRemaining === 'number');
+  if (src.length < 2) {
+    list.innerHTML = '<div class="inf-empty">No history yet. The unit uploads one sample per second while it runs.</div>';
+    return;
+  }
+  const runs = [];
+  let start = 0;
+  for (let i = 1; i < src.length; i++) {
+    if (src[i].bottlePercentRemaining - src[i - 1].bottlePercentRemaining >= 30) { runs.push(src.slice(start, i)); start = i; }
+  }
+  runs.push(src.slice(start));
+  const live = state.beds[state.activeBed] || {};
+  const cfg = getBedConfig(state.activeBed);
+  const capacity = live.capacityMl || cfg.bottleVolume || 0;
+  const fmtT = (t) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  list.innerHTML = runs.filter(r => r.length > 1).reverse().map((r, idx) => {
+    const a = r[0], b = r[r.length - 1];
+    const mins = Math.round((b.t - a.t) / 60000);
+    const dropPct = Math.max(0, a.bottlePercentRemaining - b.bottlePercentRemaining);
+    const vol = capacity ? Math.round(dropPct * capacity / 100) + ' mL' : Math.round(dropPct) + ' %';
+    const flows = r.map(d => d.flowRateMlPerHr).filter(v => typeof v === 'number');
+    const avg = flows.length ? (flows.reduce((x, y) => x + y, 0) / flows.length).toFixed(1) : '--';
+    return '<div class="inf-row" onclick="zoomTo(' + a.t + ',' + b.t + ')"><div><b>' + fmtT(a.t) + ' – ' + fmtT(b.t) + '</b>' +
+      (idx === 0 && Date.now() - b.t < 120000 ? ' <span style="color:var(--accent)">current</span>' : '') + '<br>' + mins + ' min</div>' +
+      '<div style="text-align:right"><b>' + vol + '</b> given<br>avg ' + avg + ' mL/hr</div></div>';
+  }).join('');
+}
+
+window.zoomTo = (t0, t1) => {
+  const c = window.chartInstance;
+  const pad = Math.max(30000, (t1 - t0) * 0.05);
+  c.options.scales.x.min = t0 - pad;
+  c.options.scales.x.max = t1 + pad;
+  c.update('none');
+};
+
+window.onLocalLive = (jsonStr) => {
+  try {
+    const data = JSON.parse(jsonStr);
+    // The board's clock may never have synced (lastUpdated 0), so stale means "phone heard nothing for 15 s".
+    data.lastUpdated = Date.now();
+    const bedId = typeof data.bed === 'string' && data.bed ? data.bed : state.activeBed;
+    if (!state.beds[state.activeBed] && bedId !== state.activeBed) {
+      state.activeBed = bedId;
+      bridge.saveSetting('activeBed', bedId);
+    }
+    state.beds[bedId] = data;
+    renderBedSwitcher();
+    renderUI();
+  } catch (e) { console.error('onLocalLive', e); }
+};
+
+window.onLocalHistory = (jsonStr) => {
+  try {
+    const data = JSON.parse(jsonStr);
+    if (data && data.points) {
+      const now = Date.now();
+      state.historyData = data.points.map(p => ({
+        t: now - (p[0] * 1000), flowRateMlPerHr: p[1], bottlePercentRemaining: p[2]
+      })).filter(d => !state.rangeMin || d.t >= now - state.rangeMin * 60000);
+      updateHistoryChart();
+    }
+  } catch (e) { console.error('onLocalHistory', e); }
+};
+
+window.onLocalStatus = (status) => {
+  document.getElementById('connStatusText').textContent = status;
+};
+
+async function startSync() {
+  if (state.mode === 'A') {
+    document.getElementById('modeBadge').textContent = 'MODE A BACKEND';
+    setStatus('Connecting…');
+    try {
+      const cfgRes = await fetch('web/firebase-config.json');
+      const firebaseConfig = await cfgRes.json();
+      if (!firebaseConfig.apiKey || !firebaseConfig.databaseURL) throw new Error('firebase-config.json is incomplete');
+      if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+      await firebase.auth().signInAnonymously();
+      setStatus('Signed in · waiting for beds…');
+      const db = firebase.database();
+      db.ref('.info/connected').on('value', (snap) => {
+        if (snap.val() === false) setStatus('Offline · reconnecting…', false);
+      });
+      db.ref('beds').on('value', (snapshot) => {
+        const data = snapshot.val() || {};
+        state.beds = data;
+        const n = Object.keys(data).length;
+        setStatus(n ? 'Live · ' + n + ' unit' + (n === 1 ? '' : 's') : 'Connected · no units publishing', n > 0);
+        if (n && !data[state.activeBed]) state.activeBed = Object.keys(data).sort()[0];
+        renderBedSwitcher();
+        renderUI();
+      }, (err) => setStatus('Read denied: ' + (err.code || err.message), false));
+      subscribeHistory(state.activeBed);
+    } catch (e) {
+      console.error('Firebase start failed', e);
+      setStatus('Firebase error: ' + (e.code || e.message), false);
+    }
+  } else {
+    document.getElementById('modeBadge').textContent = 'MODE B LOCAL';
+    setStatus('Looking for DripTrace hotspot…');
+    try { bridge.startLocal(); } catch (e) { setStatus('Local mode error: ' + e.message, false); }
+  }
+
+  setInterval(() => {
+    renderBedSwitcher();
+    renderUI();
+  }, 1000);
+}
+
+function loadHistory(bedId) {
+  if (state.mode !== 'A' || !firebase.apps.length) return;
+  // rangeMin 0 = "Last run": the newest 2 h of samples, however long ago they were recorded.
+  const base = firebase.database().ref(`history/${bedId}`).orderByChild('t');
+  (state.rangeMin ? base.startAt(Date.now() - state.rangeMin * 60000).limitToLast(state.rangeMin * 60) : base.limitToLast(7200))
+    .once('value').then((snapshot) => {
+      const data = snapshot.val();
+      state.historyData = data ? Object.values(data).filter(d => d && typeof d.t === 'number').sort((a, b) => a.t - b.t) : [];
+      updateHistoryChart();
+    }).catch((e) => console.error('history', e));
+}
+
+function subscribeHistory(bedId) {
+  if (state.historyTimer) clearInterval(state.historyTimer);
+  loadHistory(bedId);
+  state.historyTimer = setInterval(() => loadHistory(state.activeBed), 30000);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const ctx = document.getElementById('historyChart').getContext('2d');
+  window.chartInstance = new Chart(ctx, {
+    type: 'line',
+    data: { datasets: [
+      { label: 'Flow mL/hr', data: [], yAxisID: 'y', borderColor: '#00d4ff', backgroundColor: 'rgba(0, 212, 255, 0.1)', fill: true, tension: 0.2, pointRadius: 0, borderWidth: 2, spanGaps: false },
+      { label: 'Bottle %', data: [], yAxisID: 'y1', borderColor: '#10e898', pointRadius: 0, borderWidth: 1.5, tension: 0.2, spanGaps: false }
+    ] },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false, parsing: false,
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        x: { type: 'time', time: { tooltipFormat: 'HH:mm:ss' }, ticks: { color: '#8a9bb0', maxTicksLimit: 6 } },
+        y: { position: 'left', beginAtZero: true, ticks: { color: '#00d4ff' } },
+        y1: { position: 'right', min: 0, max: 100, grid: { drawOnChartArea: false }, ticks: { color: '#10e898' } }
+      },
+      plugins: { legend: { display: false } }
+    }
+  });
+  document.querySelectorAll('#rangeChips .chip').forEach((chip) => {
+    chip.onclick = () => {
+      document.querySelectorAll('#rangeChips .chip').forEach(c => c.classList.remove('on'));
+      chip.classList.add('on');
+      state.rangeMin = Number(chip.dataset.min);
+      if (state.mode === 'A') loadHistory(state.activeBed); else updateHistoryChart();
+    };
+  });
+  startSync();
+});
+</script>
+
+</body>
+</html>
+
