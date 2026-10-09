@@ -150,6 +150,113 @@
           }
         }
       }
+    },
+    "ward": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      "beds": {
+        "$bedId": {
+          ".validate": "newData.hasChildren(['bedNumber', 'patientId', 'device', 'volumeMl', 'prescribedFlowMlPerHr'])",
+          "bedNumber": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 16"
+          },
+          "patientId": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 40"
+          },
+          "device": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 48"
+          },
+          "volumeMl": {
+            ".validate": "newData.isNumber() && newData.val() >= 50 && newData.val() <= 3000"
+          },
+          "prescribedFlowMlPerHr": {
+            ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 999"
+          },
+          "lowVolumePct": {
+            ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1 && newData.val() <= 50)"
+          },
+          "clinician": {
+            ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 60)"
+          },
+          "notes": {
+            ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 280)"
+          },
+          "ivStartAt": {
+            ".validate": "!newData.exists() || newData.isNumber()"
+          },
+          "createdAt": {
+            ".validate": "newData.isNumber()"
+          },
+          "updatedAt": {
+            ".validate": "newData.isNumber()"
+          },
+          "$other": {
+            ".validate": false
+          }
+        }
+      },
+      "acks": {
+        "$bedId": {
+          "kind": {
+            ".validate": "newData.isString() && newData.val().length <= 60"
+          },
+          "at": {
+            ".validate": "newData.isNumber()"
+          },
+          "by": {
+            ".validate": "newData.isString() && newData.val().length <= 40"
+          },
+          "$other": {
+            ".validate": false
+          }
+        }
+      },
+      "settings": {
+        "lowVolumePct": {
+          ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 50"
+        },
+        "flowDeviationPct": {
+          ".validate": "newData.isNumber() && newData.val() >= 5 && newData.val() <= 80"
+        },
+        "$other": {
+          ".validate": false
+        }
+      },
+      "log": {
+        "$pushId": {
+          ".write": "auth != null && !data.exists()",
+          "at": {
+            ".validate": "newData.isNumber()"
+          },
+          "bedId": {
+            ".validate": "newData.isString() && newData.val().length <= 60"
+          },
+          "bedLabel": {
+            ".validate": "newData.isString() && newData.val().length <= 80"
+          },
+          "kind": {
+            ".validate": "newData.isString() && newData.val().length <= 60"
+          },
+          "severity": {
+            ".validate": "newData.isString() && newData.val().matches(/^(critical|caution|normal|offline)$/)"
+          },
+          "event": {
+            ".validate": "newData.isString() && newData.val().matches(/^(acknowledged|assigned|edited|removed)$/)"
+          },
+          "reason": {
+            ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 120)"
+          },
+          "by": {
+            ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 40)"
+          },
+          "$other": {
+            ".validate": false
+          }
+        }
+      },
+      "$other": {
+        ".validate": false
+      }
     }
   }
 }
